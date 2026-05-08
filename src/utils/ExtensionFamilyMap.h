@@ -7,6 +7,7 @@
 // and we can also look up all extensions in a family.
 class ExtensionFamilyMap {
 public:
+    // Get the family for an extension. Returns reference that is valid until next call with unknown extension.
     static const std::string& get_family(const std::string& ext);
     
     // Get all extensions in the same family as `ext`.
@@ -23,6 +24,7 @@ private:
 };
 
 // Built-in mapping (used by default).
+// Known families: image, document, spreadsheet, archive, video, audio.
 inline const std::unordered_map<std::string, std::string>& builtin_families() {
     static const std::unordered_map<std::string, std::string> families = {
         // Images
@@ -46,13 +48,15 @@ inline const std::unordered_map<std::string, std::string>& builtin_families() {
     return families;
 }
 
+// Get the family for an extension. For known extensions, returns a reference to
+// the built-in map value (stable). For unknown extensions, returns a thread-local
+// string that is valid until the next call with another unknown extension.
 inline const std::string& ExtensionFamilyMap::get_family(const std::string& ext) {
-    // Note: for unknown extensions a thread_local string is returned.
-    // This is safe for callers that use the reference immediately, but
-    // not safe if the caller holds a reference across multiple calls.
     auto it = builtin_families().find(ext);
     if (it != builtin_families().end()) return it->second;
 
+    // Thread-local fallback for unknown extensions — safe within a single thread,
+    // but callers must copy the result before making nested calls.
     static thread_local std::string fallback;
     fallback = ext;
     return fallback;

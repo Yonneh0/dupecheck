@@ -5,24 +5,27 @@
 #include <thread>
 #include <algorithm>
 
-constexpr size_t HASH_BUFFER_SIZE = 64 * 1024; // 64KB read buffer
+constexpr size_t HASH_BUFFER_SIZE = 64 * 1024; // 64KB read buffer per file during I/O.
 
-// Static member definitions.
+// Static member definitions — initialized at process startup.
 HCRYPTPROV_HANDLE HashEngine::g_bcrypt_prov_{};
 BCRYPT_ALG_HANDLE HashEngine::g_bcrypt_alg_{nullptr};
 bool HashEngine::s_initialized = false;
 std::once_flag HashEngine::s_init_flag;
 
 namespace {
+    // Open bcrypt SHA256 algorithm provider. Returns ERROR_SUCCESS on success.
     NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
         return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
     }
 
+    // Open bcrypt AES algorithm provider (reserved for future use).
     NTSTATUS init_aes_provider(BCRYPT_ALG_HANDLE& hAlg) {
         return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     }
 } // anonymous namespace
 
+// Initialize the bcrypt SHA256 provider. Thread-safe via std::call_once (see HashEngine.h).
 void HashEngine::init_bcrypt() {
     if (s_initialized) return;
 
@@ -32,6 +35,17 @@ void HashEngine::init_bcrypt() {
     s_initialized = true;
 }
 
+// Cleanup bcrypt handles at process exit.
+void HashEngine::cleanup() {
+    if (g_bcrypt_alg_) {
+        BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
+        g_bcrypt_alg_ = nullptr;
+    }
+    s_initialized = false;
+}
+
+/// Compute XxHash32 + SHA256 for a single file in one I/O pass.
+/// Reads the file in 64KB chunks, updating both hash states incrementally.
 HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
     // Initialize bcrypt on first use.

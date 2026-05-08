@@ -13,7 +13,7 @@ DupeCheck is a C++ Windows application that finds duplicate files across folders
 | Language | C++20 |
 | Build System | CMake 3.24+ |
 | GUI | ImGui + Dear ImGui Win32 backend (single `.exe`) |
-| Hashing | Local XxHash32 implementation (`xxhash.c/h`), Windows native SHA256 via CryptoAPI or bcrypt |
+| Hashing | Local XxHash32 implementation (`src/hashing/xxhash.c/h`), Windows native SHA256 via **Bcrypt** API (BCryptOpenAlgorithmProvider, BCryptHashData) |
 | Database | sqlite3.h (compiled in or linked as `sqlite3.lib`) with WAL mode for multi-process concurrency |
 | Service | Native Windows Service API (WinMain-based service) |
 | Threading | `<thread>`, `<mutex>`, C++ thread pools |
@@ -78,12 +78,12 @@ DupeCheck is a C++ Windows application that finds duplicate files across folders
 
 | Module | Responsibility |
 |--------|---------------|
-| `FileScanner` | Enumerates a directory tree, collects file metadata (path, size, mtime, ext), computes XxHash32 in parallel workers |
-| `HashEngine` | Computes SHA256 for candidate files; batched I/O passes to minimize open/close overhead |
-| `DuplicateEngine` | Runs detection strategies (exact, name-variant, size+hash, extension-family, folder-copy) against scanned data |
-| `CachedScannerService` | Persists scan results in SQLite; supports incremental updates by comparing file metadata against cached entries |
-| `OrganizationSvc` | Executes batch actions on duplicate groups; builds a history log for undo |
-| `ImGuiView` | Renders the window, controls (path input, scan button), result panels, preview/apply dialogs, settings panel |
+| `FileScanner` | Enumerates a directory tree recursively; collects file metadata and computes XxHash32 in parallel workers |
+| `HashEngine` | Computes XxHash32 + SHA256 in a single I/O pass per file using 64KB read buffers; thread pool (N = CPU cores - 1) |
+| `DuplicateEngine` | Runs all enabled detection strategies (exact, name-variant, size+hash, extension-family, folder-copy) and merges results |
+| `CachedScannerService` | Persists scan results in SQLite with WAL mode; supports incremental updates by comparing file metadata against cached entries |
+| `OrganizationSvc` | Executes batch actions on duplicate groups; builds a history log for undo support |
+| `ImGuiView` | Renders the main window, controls (path input, scan button), result panels, preview/apply dialogs, and settings panel using Dear ImGui Win32 backend |
 
 ---
 
@@ -165,28 +165,20 @@ For the `FolderCopy` strategy:
 
 ## 5. Detection Strategies
 
-### 5a. Exact Match
-- Group files by `sha256`. Any group with ≥2 entries = duplicates.
-- Fastest, zero false positives.
+### 5a. Exact Match — Strategy value: **1**
+Group files by SHA256 hash. Any group with ≥2 entries is a duplicate set. Fastest strategy, zero false positives.
 
-### 5b. Name Variant
-- For each pair of files with same content (same sha256):
-  - Compute Levenshtein distance between file names (without extension).
-  - If `distance <= nameSimilarityThreshold` (default: 3), classify as a "Name Variant".
-- Also handles cases like `report_1.docx`, `report_2.docx` where content differs slightly but structure is similar.
+### 5b. Name Variant — Strategy value: **2**
+For each pair of files with identical content (same SHA256), compute the Levenshtein distance between file names (without extension). If `distance <= nameSimilarityThreshold` (default: 3), classify as a "Name Variant". Handles cases like `report_1.docx`, `report_2.docx`.
 
-### 5c. Size+Hash Similar
-- Bin files by `size` first (exact size match).
-- Within each size bin, group by XxHash32 range: `[hash & ~(tolerance - 1)]`.
-- Tolerance defaults to 1024 bytes; bins are computed as `xxHash >> 8` for grouping.
+### 5c. Size+Hash Similar — Strategy value: **4**
+Bin files by exact size first. Within each size bin, group by XxHash32 range using `[hash & ~(tolerance - 1)]` where tolerance defaults to 1024 bytes. Detects modified copies of similar-sized files.
 
-### 5d. Extension Family
-- Map extensions to families: `{jpg, jpeg, jpe} → "image"`, `{docx, doc, docm} → "document"`.
-- Files in the same family with matching SHA256 are duplicates (e.g., `photo.jpg` and `photo.jpeg`).
+### 5d. Extension Family — Strategy value: **8**
+Map extensions to families (`{jpg, jpeg, jpe} → "image"`, `{docx, doc, docm} → "document"`). Files in the same family with matching SHA256 are duplicates (e.g., `photo.jpg` and `photo.jpeg`).
 
-### 5e. Folder Copy
-- For each directory: compute a tree hash (see §4 above).
-- Group directories by tree hash; groups with ≥2 entries = folder copies.
+### 5e. Folder Copy — Strategy value: **16**
+For each directory, compute a tree hash via recursive SHA256 over sorted `name|size\n` entries. Group directories by tree hash; groups with ≥2 entries = folder copies. Directory-level trees are computed inline (not stored in the `directories` table).
 
 ---
 
@@ -213,17 +205,11 @@ CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
 CREATE INDEX IF NOT EXISTS idx_files_xxhash ON files(xxhash32);
 
--- For folder copy strategy: store directory tree hashes
-CREATE TABLE IF NOT EXISTS directories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path TEXT UNIQUE NOT NULL COLLATE NOCASE,
-    tree_hash BLOB(32) NOT NULL,  -- SHA256 of tree structure
-    last_scan INTEGER NOT NULL
-);
+/* Note: directories table was removed — FolderCopy now computes tree hashes inline. */
 
--- Cache the scan session for quick lookup
 CREATE TABLE IF NOT EXISTS scan_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_hash BIGINT NOT NULL DEFAULT 0,
     scan_path TEXT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (strftime('%s', 'now')),
     file_count INTEGER NOT NULL,
@@ -383,6 +369,12 @@ The GUI connects to the service via:
 | Max Concurrent Hashers | SpinBox (1–CPU cores-1) | Auto |
 | Extension Families | Multi-line editor | See settings schema |
 | Enable Windows Service | Checkbox | true |
+
+---
+
+## 18. Notes on Strategy Values and Plan Numbering
+
+The `Strategy` enum uses bitmask values that are powers of two: `ExactMatch = 1`, `NameVariant = 2`, `SizeHashSimilar = 4`, `ExtensionFamily = 8`, `FolderCopy = 16`. These are intentionally not sequential numbers — they allow combination via bitwise OR. The plan references these as "5a–5e" in the strategy descriptions, but the actual C++ enum uses the bit-flag values shown above.
 
 ---
 

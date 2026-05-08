@@ -17,9 +17,12 @@ CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
 CREATE INDEX IF NOT EXISTS idx_files_xxhash ON files(xxhash32);
 
+/* Note: directories table was removed — FolderCopy now computes tree hashes inline. */
+
 CREATE TABLE IF NOT EXISTS scan_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_path TEXT NOT NULL,
+    path_hash BIGINT NOT NULL DEFAULT 0,
     created_at BIGINT NOT NULL DEFAULT (strftime('%s', 'now')),
     file_count INTEGER NOT NULL,
     duplicate_count INTEGER NOT NULL,
@@ -171,15 +174,13 @@ bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& curr
 }
 
 bool DatabaseManager::save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags) {
-    const char* sql = "INSERT INTO scan_sessions (scan_path, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, strftime('%s', 'now'), ?, ?, ?)";
+    const char* sql = "INSERT INTO scan_sessions (path_hash, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, strftime('%s', 'now'), ?, ?, ?)";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return false;
 
-    // Convert path_hash to string.
-    std::string path_str = std::to_string(path_hash);
-    sqlite3_bind_text(stmt, 1, path_str.c_str(), static_cast<int>(path_str.size()), SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 1, path_hash);
     sqlite3_bind_int(stmt, 2, file_count);
     sqlite3_bind_int(stmt, 3, duplicate_count);
     sqlite3_bind_int(stmt, 4, strategy_flags);
