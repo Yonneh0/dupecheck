@@ -1,11 +1,8 @@
 #include "HashEngine.h"
-#include <algorithm>
 
-namespace {
-    NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
-        return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
-    }
-} // anonymous namespace
+static NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
+    return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+}
 
 void HashEngine::init_bcrypt() {
     std::call_once(s_init_flag, []() {
@@ -20,7 +17,6 @@ void HashEngine::cleanup() {
         g_bcrypt_alg_ = nullptr;
     }
     s_initialized = false;
-    s_init_flag.clear();
 }
 
 HashResult HashEngine::compute(const wchar_t* path) {
@@ -60,7 +56,6 @@ HashResult HashEngine::compute(const wchar_t* path) {
     }
 
     result.xxhash = xxhash_state;
-    DWORD hashLen = sizeof(result.sha256);
     BCryptFinishHash(hSha256, result.sha256.data(), static_cast<DWORD>(result.sha256.size()), 0);
     BCryptDestroyHash(hSha256);
     CloseHandle(hFile);
@@ -80,15 +75,11 @@ void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
     ThreadPool pool(std::max(1, num_threads));
     out.resize(paths.size());
 
-    std::vector<std::future<void>> futures;
-    futures.reserve(paths.size());
-
     for (size_t i = 0; i < paths.size(); ++i) {
         const auto& p = paths[i];
-        futures.push_back(std::async(std::launch::async, [this, &p, idx = i]() mutable -> HashResult {
-            return compute(p.c_str());
-        }));
+        pool.submit([this, &p]() -> HashResult { return compute(p.c_str()); })
+            .then([&, idx = i](auto&& future) mutable { out[idx] = future.get(); });
     }
 
-    for (size_t i = 0; i < paths.size(); ++i) out[i] = futures[i].get();
+    pool.wait_all();
 }

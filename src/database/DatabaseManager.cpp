@@ -87,27 +87,42 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
 }
 
 bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& current_paths) {
-    if (current_paths.empty()) { sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr); return true; }
-    std::string where = "WHERE path NOT IN ("; bool first = true;
+    if (current_paths.empty()) {
+        sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr);
+        return true;
+    }
+
+    std::string where = "WHERE path NOT IN (";
+    bool first = true;
     for (const auto& p : current_paths) {
         std::string utf8_path = PathUtils::wide_to_utf8(p);
-        std::string escaped; escaped.reserve(utf8_path.size() * 2 + 1);
-        for (char c : utf8_path) { if (c == '\'') escaped += "''"; else escaped += c; }
-        where += first ? "'" + escaped + "'" : ", '" + escaped + "'"; first = false;
+        std::string escaped;
+        escaped.reserve(utf8_path.size() * 2 + 1);
+        for (char c : utf8_path) {
+            if (c == '\'') escaped += "''";
+            else escaped += c;
+        }
+        where += first ? "'" + escaped + "'" : ", '" + escaped + "'";
+        first = false;
     }
     where += ")";
-    sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr);
-    sqlite3_exec(db_, where.c_str(), nullptr, nullptr, nullptr); return true;
+
+    std::string sql = "DELETE FROM files " + where;
+    return sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 bool DatabaseManager::save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags) {
     const char* sql = "INSERT INTO scan_sessions (path_hash, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, strftime('%s', 'now'), ?, ?, ?)";
-    sqlite3_stmt* stmt; int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) return false;
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
     sqlite3_bind_int64(stmt, 1, path_hash);
-    sqlite3_bind_int(stmt, 2, file_count); sqlite3_bind_int(stmt, 3, duplicate_count);
-    sqlite3_bind_int(stmt, 4, strategy_flags);
-    rc = sqlite3_step(stmt); int changes = sqlite3_changes(db_); sqlite3_finalize(stmt);
+    sqlite3_bind_int64(stmt, 2, file_count);
+    sqlite3_bind_int64(stmt, 3, duplicate_count);
+    sqlite3_bind_int64(stmt, 4, strategy_flags);
+
+    int changes = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(db_) : 0;
+    sqlite3_finalize(stmt);
     return changes > 0;
 }
 
@@ -125,14 +140,17 @@ bool DatabaseManager::record_action(int session_id, const std::wstring& file_pat
                                      const std::string& old_value,
                                      const std::string& new_value) {
     const char* sql = "INSERT INTO action_history (session_id, file_path, action_type, old_value, new_value, performed_at) VALUES (?, ?, ?, ?, strftime('%s', 'now'))";
-    sqlite3_stmt* stmt; int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) return false;
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
     std::string path_str = PathUtils::wide_to_utf8(file_path);
-    sqlite3_bind_int(stmt, 1, session_id);
-    sqlite3_bind_text(stmt, 2, path_str.c_str(), static_cast<int>(path_str.size()), SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, action_type.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 4, old_value.empty() ? nullptr : old_value.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 5, new_value.empty() ? nullptr : new_value.c_str(), -1, SQLITE_STATIC);
-    rc = sqlite3_step(stmt); int changes = sqlite3_changes(db_); sqlite3_finalize(stmt);
+    sqlite3_bind_int64(stmt, 1, session_id);
+    sqlite3_bind_text(stmt, 2, path_str.c_str(), static_cast<int>(path_str.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, action_type.empty() ? nullptr : action_type.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, old_value.empty() ? nullptr : old_value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, new_value.empty() ? nullptr : new_value.c_str(), -1, SQLITE_TRANSIENT);
+
+    int changes = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(db_) : 0;
+    sqlite3_finalize(stmt);
     return changes > 0;
 }

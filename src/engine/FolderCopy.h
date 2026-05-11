@@ -1,40 +1,62 @@
 #pragma once
+
 #include <vector>
 #include <unordered_map>
 #include "../core/FileInfo.h"
 #include "DuplicateEngine.h"
 
 inline void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
-    std::vector<PathUtils::FileEntry> entries; PathUtils::enumerate_files(dir_path, entries);
-    if (entries.empty()) { std::fill(out_hash.begin(), out_hash.end(), 0); return; }
+    static std::once_flag init_flag;
+    std::call_once(init_flag, []() { HashEngine::init_bcrypt(); });
 
-    std::vector<std::pair<std::wstring, uint64_t>> file_entries; file_entries.reserve(entries.size());
-    for (auto& entry : entries) { const std::wstring* p = &entry.path; size_t last_sep = p->find_last_of(L'\\'); file_entries.push_back({(last_sep != std::wstring::npos) ? p->substr(last_sep + 1) : *p, entry.size}); }
+    std::vector<PathUtils::FileEntry> entries;
+    PathUtils::enumerate_files(dir_path, entries);
+    if (entries.empty()) {
+        std::fill(out_hash.begin(), out_hash.end(), 0);
+        return;
+    }
+
+    std::vector<std::pair<std::wstring, uint64_t>> file_entries;
+    file_entries.reserve(entries.size());
+    for (const auto& entry : entries) {
+        size_t last_sep = entry.path.find_last_of(L'\\');
+        file_entries.emplace_back((last_sep != std::wstring::npos) ? entry.path.substr(last_sep + 1) : entry.path, entry.size);
+    }
     std::sort(file_entries.begin(), file_entries.end());
 
-    std::string sha_input; sha_input.reserve(128 * entries.size());
-    for (const auto& [name, sz] : file_entries) sha_input += PathUtils::wide_to_utf8(name) + "|" + std::to_string(sz) + "\n";
+    std::string sha_input;
+    sha_input.reserve(128 * entries.size());
+    for (const auto& [name, sz] : file_entries) {
+        sha_input += PathUtils::wide_to_utf8(name) + "|" + std::to_string(sz) + "\n";
+    }
 
-    static bool bcrypt_init = false;
-    if (!bcrypt_init) { HashEngine::init_bcrypt(); bcrypt_init = true; }
-
-    BCRYPT_HASH_HANDLE hHash = nullptr; NTSTATUS status = BCryptCreateHash(HashEngine::g_bcrypt_alg_, &hHash, nullptr, 0, nullptr, 0, 0);
+    BCRYPT_HASH_HANDLE hHash = nullptr;
+    NTSTATUS status = BCryptCreateHash(HashEngine::get_alg_handle(), &hHash, nullptr, 0, nullptr, 0, 0);
     if (status == ERROR_SUCCESS) {
         BCryptHashData(hHash, reinterpret_cast<uint8_t*>(const_cast<char*>(sha_input.data())), static_cast<DWORD>(sha_input.size()), 0);
-        DWORD hashLen = sizeof(out_hash); BCryptFinishHash(hHash, out_hash.data(), static_cast<DWORD>(out_hash.size()), 0);
+        BCryptFinishHash(hHash, out_hash.data(), static_cast<DWORD>(out_hash.size()), 0);
         BCryptDestroyHash(hHash);
-    } else { std::fill(out_hash.begin(), out_hash.end(), static_cast<uint8_t>(dir_path.size())); }
+    } else {
+        std::fill(out_hash.begin(), out_hash.end(), static_cast<uint8_t>(dir_path.size()));
+    }
 }
 
 inline std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& dirs) {
     std::unordered_map<Sha256, std::vector<std::wstring>> hash_to_dirs;
-    for (const auto& d : dirs) { Sha256 h{}; compute_tree_hash(d, h); hash_to_dirs[h].push_back(d); }
+    for (const auto& d : dirs) {
+        Sha256 h{};
+        compute_tree_hash(d, h);
+        hash_to_dirs[h].push_back(d);
+    }
 
     std::vector<DuplicateGroup> groups;
     for (const auto& [hash, path_list] : hash_to_dirs) {
         if (path_list.size() < 2) continue;
         DuplicateGroup dg;
-        for (const auto& p : path_list) { FileInfo fi{p, 0, 0}; dg.files.push_back(std::move(fi)); }
+        for (const auto& p : path_list) {
+            FileInfo fi{p, 0, 0};
+            dg.files.push_back(std::move(fi));
+        }
         dg.strategy = Strategy::FolderCopy;
         dg.label = "Folder Copy (" + PathUtils::wide_to_utf8(PathUtils::get_name_without_ext(path_list[0])) + " x" + std::to_string(path_list.size()) + ")";
         groups.push_back(std::move(dg));
