@@ -4,17 +4,14 @@
 
 class RenameAction {
 public:
-    // Generate renamed path for a file in a duplicate group.
     static std::wstring generate_name(const FileInfo& original, const FileInfo& copy, 
                                        int index, int total_in_group) {
         auto orig_name = PathUtils::get_name_without_ext(original.path);
         auto ext = PathUtils::get_extension(original.path);
 
-        // Format: name (copy 1).ext
         return orig_name + L" (copy " + std::to_wstring(index + 1) + L")." + ext;
     }
 
-    // Apply rename action.
     static bool apply(const FileInfo& file, const wchar_t* new_path) {
         LONG result = SHFileOperationW(&SHFILEOPSTRUCT{
             .hwnd = nullptr,
@@ -26,7 +23,6 @@ public:
         return result == 0;
     }
 
-    // Undo rename action.
     static bool undo(const wchar_t* old_name, const wchar_t* new_name) {
         LONG result = SHFileOperationW(&SHFILEOPSTRUCT{
             .hwnd = nullptr,

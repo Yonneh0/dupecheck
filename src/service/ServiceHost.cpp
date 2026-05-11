@@ -10,13 +10,12 @@ bool ServiceHost::is_running_ = false;
 int ServiceHost::g_interval_seconds_ = 300;
 
 void ServiceHost::do_scan() {
-    // Enumerate files in the configured path.
     std::vector<PathUtils::FileEntry> entries;
     PathUtils::enumerate_files(scan_path_, entries);
 
     for (auto& entry : entries) {
         HashResult hr = HashEngine::compute(entry.path.c_str());
-        (void)hr;  // In a full implementation, store in DatabaseManager.
+        (void)hr;
     }
 }
 
@@ -33,14 +32,13 @@ DWORD WINAPI ServiceHost::service_main(DWORD argc, LPWSTR* argv) {
     SetServiceStatus(h_service_status_, &ss);
     ss.dwCurrentState = SERVICE_RUNNING;
 
-    // Initialize hashing engine.
     HashEngine::init_bcrypt();
 
     is_running_ = true;
     do_scan();
 
     while (is_running_) {
-        Sleep(static_cast<DWORD>(g_interval_seconds_) * 1000);  // Use configured interval.
+        Sleep(static_cast<DWORD>(g_interval_seconds_) * 1000);
         if (is_running_) do_scan();
     }
 
@@ -65,11 +63,9 @@ void WINAPI ServiceHost::service_control_handler(DWORD control) {
 }
 
 void ServiceHost::run_service(const std::wstring& scan_path, int interval_seconds) {
-    // Register the service control handler once.
     h_service_status_ = RegisterServiceCtrlHandlerW(SERVICE_NAME, service_control_handler);
     if (h_service_status_ == nullptr) return;
 
-    // Store both scan path and interval so they're available in do_scan().
     scan_path_ = scan_path;
     g_interval_seconds_ = interval_seconds;
 
@@ -82,7 +78,6 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
 
     SetServiceStatus(h_service_status_, &ss);
 
-    // Initialize hashing engine.
     HashEngine::init_bcrypt();
 
     is_running_ = true;
@@ -91,7 +86,6 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
     ss.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(h_service_status_, &ss);
 
-    // Start periodic scan loop with configured interval.
     while (is_running_) {
         Sleep(static_cast<DWORD>(g_interval_seconds_) * 1000);
         if (is_running_) do_scan();
@@ -101,7 +95,6 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
     SetServiceStatus(h_service_status_, &ss);
 }
 
-// Parse command line arguments for console mode.
 ServiceArgs parse_args(int argc, char** argv) {
     ServiceArgs args;
     if (argc < 1) return args;
@@ -122,9 +115,7 @@ ServiceArgs parse_args(int argc, char** argv) {
     return args;
 }
 
-// Install the service to Windows registry.
 bool install_service(const wchar_t* exe_path, const wchar_t* scan_path) {
-    // If exe_path is empty or null, resolve the current executable path.
     std::wstring full_exe_path;
     if (exe_path && *exe_path != L'\0') {
         full_exe_path = exe_path;
@@ -137,7 +128,6 @@ bool install_service(const wchar_t* exe_path, const wchar_t* scan_path) {
     SC_HANDLE sch = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
     if (sch == nullptr) return false;
 
-    // Properly construct service command with quoted path.
     std::wstring cmd_line = L"\"" + full_exe_path + L"\" --service";
 
     SC_HANDLE sh = CreateServiceW(sch, SERVICE_NAME, DISPLAY_NAME,
@@ -152,7 +142,6 @@ bool install_service(const wchar_t* exe_path, const wchar_t* scan_path) {
     return ok;
 }
 
-// Uninstall the service from Windows registry.
 bool uninstall_service() {
     SC_HANDLE sch = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_ALL_ACCESS);
     if (sch == nullptr) return false;
@@ -163,11 +152,9 @@ bool uninstall_service() {
         return false;
     }
 
-    // Stop service.
     SERVICE_STATUS ss{};
     ControlService(sh, SERVICE_CONTROL_STOP, &ss);
 
-    // Delete from registry.
     BOOL result = DeleteService(sh);
     CloseServiceHandle(sh);
     CloseServiceHandle(sch);

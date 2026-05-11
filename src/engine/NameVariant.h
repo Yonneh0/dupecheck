@@ -4,9 +4,7 @@
 #include "../utils/Levenshtein.h"
 #include "DuplicateEngine.h"
 
-// Strategy 5b: Files with same content but names within Levenshtein distance threshold.
 inline std::vector<DuplicateGroup> name_variant(const std::vector<FileInfo>& files, int threshold) {
-    // Group by SHA256 first (same content).
     std::unordered_map<std::array<uint8_t, 32>, std::vector<FileInfo>> sha_groups;
     
     for (auto& f : files) {
@@ -18,7 +16,6 @@ inline std::vector<DuplicateGroup> name_variant(const std::vector<FileInfo>& fil
     for (auto& [sha, group] : sha_groups) {
         if (group.size() < 2) continue;
         
-        // Check all pairs for name similarity.
         std::unordered_map<int, int> name_clusters;
         bool found_variant = false;
         

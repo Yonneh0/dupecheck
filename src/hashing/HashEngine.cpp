@@ -5,27 +5,21 @@
 #include <thread>
 #include <algorithm>
 
-constexpr size_t HASH_BUFFER_SIZE = 64 * 1024; // 64KB read buffer per file during I/O.
+constexpr size_t HASH_BUFFER_SIZE = 64 * 1024;
 
-// Static member definitions — initialized at process startup.
-HCRYPTPROV_HANDLE HashEngine::g_bcrypt_prov_{};
-BCRYPT_ALG_HANDLE HashEngine::g_bcrypt_alg_{nullptr};
 bool HashEngine::s_initialized = false;
 std::once_flag HashEngine::s_init_flag;
 
 namespace {
-    // Open bcrypt SHA256 algorithm provider. Returns ERROR_SUCCESS on success.
     NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
         return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
     }
 
-    // Open bcrypt AES algorithm provider (reserved for future use).
     NTSTATUS init_aes_provider(BCRYPT_ALG_HANDLE& hAlg) {
         return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     }
 } // anonymous namespace
 
-// Initialize the bcrypt SHA256 provider. Thread-safe via std::call_once (see HashEngine.h).
 void HashEngine::init_bcrypt() {
     if (s_initialized) return;
 
@@ -35,7 +29,6 @@ void HashEngine::init_bcrypt() {
     s_initialized = true;
 }
 
-// Cleanup bcrypt handles at process exit.
 void HashEngine::cleanup() {
     if (g_bcrypt_alg_) {
         BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
@@ -44,11 +37,8 @@ void HashEngine::cleanup() {
     s_initialized = false;
 }
 
-/// Compute XxHash32 + SHA256 for a single file in one I/O pass.
-/// Reads the file in 64KB chunks, updating both hash states incrementally.
 HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
-    // Initialize bcrypt on first use.
     std::call_once(s_init_flag, []() { init_bcrypt(); });
 
     HANDLE hFile = CreateFileW(
@@ -70,8 +60,7 @@ HashResult HashEngine::compute(const wchar_t* path) {
         return result;
     }
 
-    uint32_t xxhash_state = XXH32(0, 0);
-    // Use char buffer for byte-level hashing (not wchar_t which is 16-bit).
+    uint32_t xxhash_state = 0;
     char buffer[HASH_BUFFER_SIZE];
 
     while (total_bytes > 0) {
@@ -80,19 +69,14 @@ HashResult HashEngine::compute(const wchar_t* path) {
         if (!ReadFile(hFile, buffer, bytes_to_read, &bytesRead, nullptr)) break;
         if (bytesRead == 0) break;
 
-        const uint8_t* data = reinterpret_cast<const uint8_t*>(buffer);
-        for (DWORD i = 0; i < bytesRead / sizeof(uint32_t); ++i) {
-            xxhash_state += static_cast<uint32_t>(data[i * sizeof(uint32_t)]) * XXH_PRIME32_2;
-            xxhash_state = XXH_ROTL32(xxhash_state, 13);
-            xxhash_state *= XXH_PRIME32_1;
-        }
+        xxhash_state = XXH32(buffer, bytesRead, xxhash_state);
 
         BCryptHashData(hSha256, reinterpret_cast<uint8_t*>(buffer), bytesRead, 0);
 
         total_bytes -= bytesRead;
     }
 
-    result.xxhash = xxhash_state ^ static_cast<uint32_t>(total_bytes + fileSize.QuadPart);
+    result.xxhash = xxhash_state;
 
     DWORD hashLen = sizeof(result.sha256);
     BCryptFinishHash(hSha256, result.sha256.data(), static_cast<DWORD>(result.sha256.size()), 0);
@@ -105,7 +89,6 @@ HashResult HashEngine::compute(const wchar_t* path) {
 
 void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
                                std::vector<HashResult>& out) {
-    // Ensure bcrypt is initialized before spawning workers.
     std::call_once(s_init_flag, []() { init_bcrypt(); });
 
     SYSTEM_INFO info;
@@ -115,7 +98,6 @@ void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
 
     ThreadPool pool(std::max(1, num_threads));
 
-    // Pre-size output vector for thread safety.
     out.resize(paths.size());
 
     std::vector<std::future<void>> futures;

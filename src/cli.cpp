@@ -1,8 +1,7 @@
 #include <string>
 #include <cstring>
-#include "service/ServiceHost.h"  // For ServiceArgs and CliCommand types.
+#include "service/ServiceHost.h"
 
-// CLI argument parsing for GUI mode (uses lpCmdLine).
 inline ServiceArgs parse_winargs(const char* cmd_line) {
     ServiceArgs args;
     if (!cmd_line || !*cmd_line) return args;

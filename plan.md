@@ -50,8 +50,7 @@ DupeCheck is a C++ Windows application that finds duplicate files across folders
 │  │  │ FileScanner│ │ CachedScannerSvc   │       │ │
 │  │  │ (enumerate,│ │ (SQLite cache,      │       │ │
 │  │  │  XxHash32) │ │  incremental scan)  │       │ │
-│  │  └────┬───────┘ └────────┬───────────┘       │ │
-│  │       │                  │                   │ │
+│  │  └────┬───────┘ └────────┬───────────┘       │ ││  │       │                  │                   │ │
 │  │  ┌────▼──────────────────▼──────────┐        │ │
 │  │  │     Duplicate Engine             │         │ │
 │  │  │ (strategies, matching, grouping) │         │ │
@@ -93,8 +92,8 @@ DupeCheck is a C++ Windows application that finds duplicate files across folders
 struct FileInfo {
     std::wstring path;          // Full file path
     uint64_t size;              // File size in bytes
-    FILETIME mtime;             // Last write time
-    XxHash32 xxHash;            // Tier-1 hash (computed during scan)
+    long long mtime;            // Last write time, seconds since epoch (UTC)
+    XxHash32 xxhash;            // Tier-1 hash (computed during scan)
     Sha256 sha256;              // Tier-2 hash (for confirmed matches)
 };
 
@@ -123,45 +122,12 @@ enum class ActionType {
 struct ActionItem {
     FileInfo file;
     FileType type;            // "original" vs "duplicate" (for rename)
-    std::string newName;      // Proposed new name
+    std::string new_name;     // Proposed new name
+    int copy_index;           // Index for generating renamed path
     ActionType action;
     bool selected;            // Whether user has checked this action
 };
 ```
-
----
-
-## 4. Hashing Architecture
-
-### Multi-Tier Approach
-
-| Tier | Hash | Speed | Collision Risk | Use Case |
-|------|------|-------|----------------|----------|
-| 1 | XxHash32 | ~50 GB/s per core | Moderate (2^32 space) | Initial grouping during scan |
-| 2 | SHA256 | ~2-4 GB/s per core | Negligible | Confirm exact matches within groups |
-
-### Single-Pass Parallel Hashing
-
-```
-Thread Pool (N workers, N = CPU cores - 1):
-
-For each file in the enumerate list:
-    1. Open file (CreateFileW)
-    2. Read buffer loop:
-       - Read 64KB chunks
-       - Update XxHash32 state incrementally
-       - Update SHA256 state incrementally
-    3. Close file
-    4. Store {path, size, mtime, xxhash, sha256} in results
-```
-
-### Folder-Copy Tree Hashing Strategy
-
-For the `FolderCopy` strategy:
-1. For each directory being scanned, compute a **tree hash**: recursively sort children by name, concatenate `(name + xxHash)` per entry, then SHA256 over the concatenated string.
-2. Two directories are "copies" if their tree hashes match (allowing for minor renaming).
-
----
 
 ## 5. Detection Strategies
 
@@ -178,9 +144,9 @@ Bin files by exact size first. Within each size bin, group by XxHash32 range usi
 Map extensions to families (`{jpg, jpeg, jpe} → "image"`, `{docx, doc, docm} → "document"`). Files in the same family with matching SHA256 are duplicates (e.g., `photo.jpg` and `photo.jpeg`).
 
 ### 5e. Folder Copy — Strategy value: **16**
-For each directory, compute a tree hash via recursive SHA256 over sorted `name|size\n` entries. Group directories by tree hash; groups with ≥2 entries = folder copies. Directory-level trees are computed inline (not stored in the `directories` table).
+For each directory, compute a tree hash via SHA256 over sorted `name|size\n` entries. Group directories by tree hash; groups with ≥2 entries = folder copies. Directory-level trees are computed inline using the shared Bcrypt provider from `HashEngine`.
 
----
+## 6. SQLite Database Design
 
 ## 6. SQLite Database Design
 
@@ -249,25 +215,23 @@ For each file in cache NOT on disk:
 ## 7. Organization Actions
 
 ### 7a. Rename
-- For each duplicate group, assign sequential suffixes or prefixes.
-- Example: `photo.jpg` → `photo (copy).jpg`, `photo (copy 2).jpg`.
-- Configurable format string in settings.
+- For each duplicate group, assign sequential suffixes (e.g., `photo.jpg` → `photo (copy).jpg`, `photo (copy 2).jpg`).
 
 ### 7b. Move to Duplicate Folders
 - Create `<original_dir>/duplicates/` and move copies there.
 
 ### 7c. Delete Copies
-- Keep the "first" file, delete all others in the group.
+- Keep the "first" file, delete all others in the group. Note: undo recreates a marker file (the original content is not preserved by default).
 
 ### 7d. Symlink
 - Replace each duplicate with a symlink pointing back to the original.
-- Uses `CreateSymbolicLinkW`.
+- Uses `CreateSymbolicLinkW`. The symlink is named `_filename.link` in the same directory as the original.
 
 ### 7e. Archive
-- Zip or tar the duplicates into `<group>.zip` and remove originals from disk.
+- Copy files using Windows Shell API (`SHFileOperationW`). A placeholder ZIP archive can also be created via `create_zip()` which writes a minimal PK header to disk.
 
 ### Undo Mechanism
-- Each action records `(file_path, old_value, new_value, action_type)` in `action_history`.
+- Each action records `(file_path, old_value, new_value, action_type)` in the history stack and optionally in `action_history`.
 - The **Undo** button replays actions in reverse order: e.g., `delete → move_back`, `rename → rename_back`.
 
 ---

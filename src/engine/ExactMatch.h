@@ -1,13 +1,12 @@
 #pragma once
 #include <vector>
+#include <array>
 #include "../core/FileInfo.h"
 #include "DuplicateEngine.h"
 
-/// Strategy 5a (ExactMatch): Group files by SHA256 hash; any group with more than one file is a duplicate set.
 inline std::vector<DuplicateGroup> exact_match(const std::vector<FileInfo>& files) {
     std::unordered_map<std::array<uint8_t, 32>, std::vector<FileInfo>> sha_groups;
 
-    // Group all files by their SHA256 hash.
     for (auto& f : files) {
         sha_groups[f.sha256].push_back(std::move(f));
     }

@@ -10,7 +10,6 @@ public:
     
     explicit FileScanner(ProgressCallback progress = nullptr);
     
-    // Scan a directory and return all files with computed hashes.
     std::vector<FileInfo> scan(const wchar_t* path);
 
 private:

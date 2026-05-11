@@ -4,7 +4,6 @@
 #include <thread>
 #include <memory>
 
-// Named pipe server for IPC between GUI and service.
 class PipeImpl {
 public:
     explicit PipeImpl(const std::wstring& pipe_name, DatabaseManager* db)
@@ -31,12 +30,11 @@ private:
 
     void run_loop() {
         while (running_) {
-            // Create named pipe.
             pipe_handle_ = CreateNamedPipeW(
                 pipe_name_.c_str(),
                 PIPE_ACCESS_DUPLEX,
                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                10, // max instances
+                10,
                 4096,
                 4096,
                 1000,
@@ -47,13 +45,11 @@ private:
                 continue;
             }
 
-            // Wait for client connection.
             if (!ConnectNamedPipe(pipe_handle_, nullptr)) {
                 DisconnectNamedPipe(pipe_handle_);
                 continue;
             }
 
-            // Process commands.
             char buffer[4096];
             DWORD bytes_read = 0;
 
@@ -67,7 +63,7 @@ private:
                     WriteFile(pipe_handle_, response.c_str(), static_cast<DWORD>(response.size()), &bytes_written, nullptr);
                 }
 
-                if (command == "SCAN") break; // SCAN is one-shot.
+                if (command == "SCAN") break;
             }
 
             DisconnectNamedPipe(pipe_handle_);
@@ -75,14 +71,12 @@ private:
     }
 
     std::string serialize_results(const std::vector<FileInfo>& files) {
-        // Simple JSON-like format.
         std::string json = "{\n  \"results\": [\n";
 
         for (size_t i = 0; i < files.size(); ++i) {
             const auto& f = files[i];
             std::string path = PathUtils::wide_to_utf8(f.path);
 
-            // Escape backslashes in paths.
             std::string escaped_path;
             escaped_path.reserve(path.size() * 2);
             for (char c : path) {
@@ -108,7 +102,6 @@ private:
     }
 };
 
-// NamedPipeServer implementation.
 NamedPipeServer::NamedPipeServer(const std::wstring& pipe_name, DatabaseManager* db) {
     impl_ = std::make_unique<PipeImpl>(pipe_name, db);
 }

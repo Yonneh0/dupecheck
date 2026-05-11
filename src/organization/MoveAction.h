@@ -8,7 +8,6 @@ public:
         std::wstring dest = std::wstring(target_dir) + L"\\" + 
                            PathUtils::get_name_without_ext(file.path);
 
-        // Zero-initialize the struct to avoid garbage values.
         SHFILEOPSTRUCT fo{};
         fo.hwnd       = nullptr;
         fo.wFunc      = FO_MOVE;

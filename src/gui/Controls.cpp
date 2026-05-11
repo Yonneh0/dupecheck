@@ -1,9 +1,8 @@
 #include <imgui.h>
 #include <windows.h>
-#include <shlobj.h>  // For SHBrowseForFolderW / SHGetPathFromIDListW
+#include <shlobj.h>
 #include "ImGuiView.h"
 
-// Folder picker button handler.
 static void browse_for_folder(std::wstring& path) {
     CoInitialize(nullptr);
     BROWSEINFOW bi = {};
@@ -21,7 +20,6 @@ static void browse_for_folder(std::wstring& path) {
     CoUninitialize();
 }
 
-// Render controls panel.
 void render_controls(std::wstring& scan_path) {
     wchar_t path_buf[512] = L"";
     if (!scan_path.empty()) {
@@ -39,7 +37,6 @@ void render_controls(std::wstring& scan_path) {
         browse_for_folder(scan_path);
     }
 
-    // Scan button.
     ImGui::SameLine();
     if (ImGui::Button("Scan", ImVec2(100, 30))) {
         ImGuiView::start_scan(scan_path.c_str());

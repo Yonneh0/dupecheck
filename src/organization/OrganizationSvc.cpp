@@ -5,13 +5,11 @@
 
 std::vector<ActionHistoryEntry> OrganizationSvc::history_;
 
-// Generate a full rename path for a duplicate file (parent dir + new name).
-static std::wstring generate_renamed_path(const FileInfo& file, int index) {
+std::wstring OrganizationSvc::generate_renamed_path(const FileInfo& file, int index) {
     auto name = PathUtils::get_name_without_ext(file.path);
     auto ext = PathUtils::get_extension(file.path);
     auto parent_dir = PathUtils::get_parent_dir(file.path);
 
-    // Format: "parent\dir\name (copy N).ext"
     std::wstring result;
     if (!parent_dir.empty()) {
         result = parent_dir + L"\\";
@@ -27,7 +25,6 @@ std::vector<ActionItem> OrganizationSvc::generate_actions(const DuplicateGroup& 
         ActionItem item;
         item.file = group.files[i];
 
-        // First file is treated as "original", rest are "duplicates".
         if (i == 0) {
             item.type = FileType::Original;
         } else {
@@ -35,13 +32,12 @@ std::vector<ActionItem> OrganizationSvc::generate_actions(const DuplicateGroup& 
 
             switch (action_type) {
                 case ActionType::Rename: {
-                    // Use the duplicate's own index to generate its renamed path.
-                    std::wstring new_name_full = generate_renamed_path(group.files[i], static_cast<int>(i - 1));
+                    std::wstring new_name_full = OrganizationSvc::generate_renamed_path(group.files[i], static_cast<int>(i - 1));
                     item.new_name = PathUtils::wide_to_utf8(new_name_full);
+                    item.copy_index = static_cast<int>(i - 1);
                     break;
                 }
                 case ActionType::MoveToDuplicatesFolder: {
-                    // Include extension in destination name.
                     std::wstring ext = PathUtils::get_extension(group.files[i].path);
                     std::wstring base_name = PathUtils::get_name_without_ext(group.files[i].path);
                     item.new_name = "duplicates/" + (ext.empty() ? base_name : base_name + L"." + ext);
@@ -70,8 +66,8 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
 
         switch (item.action) {
             case ActionType::Rename: {
-                // Generate new path using the file's own index.
-                std::wstring new_name = generate_renamed_path(item.file, 1);
+                int idx = item.copy_index > 0 ? item.copy_index : 1;
+                std::wstring new_name = OrganizationSvc::generate_renamed_path(item.file, idx);
                 std::wstring old_name = PathUtils::to_long_path(item.file.path);
 
                 if (MoveFileExW(old_name.c_str(),
@@ -89,7 +85,6 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
                     PathUtils::get_parent_dir(item.file.path));
                 CreateDirectoryW(dup_dir.c_str(), nullptr);
 
-                // Include extension in destination path.
                 std::wstring full_name = PathUtils::get_name_without_ext(item.file.path) +
                                          L"." + PathUtils::get_extension(item.file.path);
 
@@ -109,7 +104,6 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
                         PathUtils::to_long_path(item.file.path));
                     entry.new_value = "(deleted)";
 
-                    // Store a marker so undo knows to recreate via backup.
                     entry.backup_path = item.file.path;
                 }
 
@@ -132,11 +126,9 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
 
             case ActionType::Archive:
             case ActionType::MoveToDuplicatesFolder:
-                // No-op for these types during apply.
                 break;
         }
 
-        // Store ActionType as enum for consistent undo comparison.
         entry.action_type = item.action;
         history_.push_back(entry);
     }
@@ -148,7 +140,6 @@ void OrganizationSvc::undo_actions() {
     auto entry = std::move(history_.back());
     history_.pop_back();
 
-    // Compare stored ActionType enum directly.
     switch (entry.action_type) {
         case ActionType::Rename: {
             MoveFileExW(PathUtils::utf8_to_wide(entry.new_value).c_str(),
@@ -165,14 +156,12 @@ void OrganizationSvc::undo_actions() {
         }
 
         case ActionType::Delete: {
-            // For delete undo, recreate the file from backup or empty marker.
             if (!entry.backup_path.empty()) {
                 HANDLE h = CreateFileW(PathUtils::to_long_path(entry.backup_path).c_str(),
                                        GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                                        CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 
                 if (h != INVALID_HANDLE_VALUE) {
-                    // Write a minimal marker so the file exists.
                     DWORD bytes_written;
                     const wchar_t marker[] = L"[restored by DupeCheck]";
                     WriteFile(h, marker, sizeof(marker), &bytes_written, nullptr);
@@ -189,7 +178,6 @@ void OrganizationSvc::undo_actions() {
         }
 
         default:
-            // Treat unknown action types as strings for backward compatibility.
             if (entry.old_value.empty()) {
                 DeleteFileW(PathUtils::utf8_to_wide(entry.new_value));
             } else {
@@ -208,7 +196,6 @@ void OrganizationSvc::undo_all() {
     }
 }
 
-// FIX: Add missing overloads for PreviewPanel integration.
 std::vector<ActionItem> OrganizationSvc::generate_actions(const std::vector<DuplicateGroup>& groups,
                                                           ActionType action_type) {
     std::vector<ActionItem> all_items;

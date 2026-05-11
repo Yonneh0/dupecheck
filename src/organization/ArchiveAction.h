@@ -4,11 +4,11 @@
 
 class ArchiveAction {
 public:
-    // Create a zip archive from duplicate files using Windows Shell API.
     static bool apply(const std::vector<FileInfo>& group, const wchar_t* output_path) {
         SHFILEOPSTRUCT fo = {};
-        fo.wFunc = FO_DELETE;
+        fo.wFunc = FO_COPY;
         fo.pFrom = group[0].path.c_str();
+        fo.pTo = output_path;
         fo.fFlags = FOF_NOCONFIRMATION | FOF_SILENT;
 
         LONG result = SHFileOperationW(&fo);
@@ -22,9 +22,8 @@ public:
         
         if (h == INVALID_HANDLE_VALUE) return false;
 
-        // Write ZIP header.
         DWORD bytes_written;
-        const char* zip_header = "PK\x05\x06"; // End of central directory record placeholder
+        const char* zip_header = "PK\x05\x06";
         WriteFile(h, zip_header, 22, &bytes_written, nullptr);
         
         CloseHandle(h);

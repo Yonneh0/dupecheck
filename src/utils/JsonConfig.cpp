@@ -10,7 +10,6 @@ std::string JsonConfig::trim_ws(const std::string& s) {
 }
 
 std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring& path) {
-    // Read directly as UTF-8 with ifstream to avoid wifstream conversion overhead.
     std::ifstream ifs(path);
     if (!ifs.is_open()) return {};
 
@@ -25,13 +24,11 @@ std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring
         if (colon_pos == std::string::npos) continue;
 
         std::string key = trim_ws(line.substr(0, colon_pos));
-        // Remove surrounding quotes from key.
         if (!key.empty() && key[0] == '"') {
             auto end_q = key.find('"', 1);
             if (end_q != std::string::npos) key = key.substr(1, end_q - 1);
         }
 
-        // Remove trailing comma.
         std::string val = trim_ws(line.substr(colon_pos + 1));
         if (!val.empty() && val.back() == ',') {
             val.pop_back();
@@ -44,15 +41,13 @@ std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring
 }
 
 bool JsonConfig::save(const std::wstring& path, const std::unordered_map<std::string, std::string>& config) {
-    // Write directly as UTF-8.
     std::ofstream ofs(path);
     if (!ofs.is_open()) return false;
 
-    size_t idx = 0;
+    size_t count = 0;
     for (const auto& [key, value] : config) {
         ofs << "  \"" << key << "\": \"" << value << "\"";
-        // Check if last item.
-        bool is_last = (++idx == config.size());
+        bool is_last = (++count == config.size());
         ofs << (is_last ? "" : ",") << "\n";
     }
 

@@ -11,7 +11,6 @@
 #include <mutex>
 #include <functional>
 
-/// Compute both XxHash32 and SHA256 in a single I/O pass over the file.
 struct HashResult {
     uint32_t xxhash;
     std::array<uint8_t, 32> sha256;
@@ -19,34 +18,25 @@ struct HashResult {
 
 class HashEngine {
 public:
-    /// Compute XxHash32 + SHA256 for a single file in one I/O pass.
     static HashResult compute(const wchar_t* path);
 
-    /// Parallel batch hash computation using a thread pool (N = CPU cores - 1).
     static void compute_batch(const std::vector<std::wstring>& paths,
                               std::vector<HashResult>& out);
 
 private:
-    /// Initialize bcrypt SHA256 provider (thread-safe, called once via std::call_once).
     static void init_bcrypt();
-
-    /// Cleanup bcrypt algorithm handle at process exit.
     static void cleanup();
 
-    // Static member — the SHA256 bcrypt algorithm handle (initialized by init_bcrypt).
     inline static BCRYPT_ALG_HANDLE g_bcrypt_alg_{nullptr};
     static bool s_initialized;
     static std::once_flag s_init_flag;
 };
 
-/// Fixed-size thread pool with work stealing for parallel hash computation.
 class ThreadPool {
 public:
-    /// Create a thread pool. If num_threads <= 0, defaults to CPU cores - 1.
     explicit ThreadPool(int num_threads = 0);
     ~ThreadPool();
 
-    /// Submit a work item and get a future<void> for the result.
     template<typename F>
     std::future<void> submit(F&& f) {
         auto task = std::make_shared<std::packaged_task<void()>>(std::forward<F>(f));
@@ -59,7 +49,6 @@ public:
         return task->get_future();
     }
 
-    /// Wait for all submitted work to complete (up to 50ms polling window).
     void wait_all();
 
 private:

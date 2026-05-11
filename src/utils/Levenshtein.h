@@ -8,7 +8,6 @@ inline int levenshtein_distance(const std::wstring& a, const std::wstring& b) {
     if (n == 0) return static_cast<int>(m);
     if (m == 0) return static_cast<int>(n);
 
-    // Use two-row approach to save memory.
     std::vector<int> prev(n + 1), curr(n + 1);
     for (size_t i = 0; i <= n; ++i) prev[i] = static_cast<int>(i);
     

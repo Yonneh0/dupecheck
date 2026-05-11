@@ -7,7 +7,6 @@ class NamedPipeServer {
 public:
     explicit NamedPipeServer(const std::wstring& pipe_name, DatabaseManager* db);
 
-    // Start listening in a background thread.
     void start();
 
     ~NamedPipeServer();

@@ -4,8 +4,6 @@
 
 class SymlinkAction {
 public:
-    // Create a symbolic link for the given file.
-    // The symlink is named "_<filename>.link" in the same directory as the original.
     static bool apply(const FileInfo& file) {
         std::wstring parent_dir = PathUtils::get_parent_dir(file.path);
         std::wstring base_name = PathUtils::get_name_without_ext(file.path);

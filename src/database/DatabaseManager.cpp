@@ -64,22 +64,20 @@ bool DatabaseManager::init() {
 }
 
 bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seconds) {
-    // Try to update first.
     const char* sql = "UPDATE files SET xxhash32=?, sha256=?, mtime=?, last_scan=? WHERE path=?";
     sqlite3_stmt* stmt;
 
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return false;
 
-    // Convert SHA256 to blob.
     std::vector<uint8_t> sha_blob(info.sha256.begin(), info.sha256.end());
 
-    // FIX: Use int64 for xxhash to avoid truncation of values > 2B.
     sqlite3_bind_int64(stmt, 1, static_cast<int64_t>(info.xxhash));
-    sqlite3_bind_blob(stmt, 2, sha_blob.data(), static_cast<int>(sha_blob.size()), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 2, sha_blob.data(), static_cast<int>(sha_blob.size()), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 3, info.mtime);
     sqlite3_bind_int64(stmt, 4, last_scan_seconds);
-    sqlite3_bind_text(stmt, 5, PathUtils::wide_to_utf8(info.path).c_str(), -1, SQLITE_STATIC);
+    std::string utf_path_update = PathUtils::wide_to_utf8(info.path);
+    sqlite3_bind_text(stmt, 5, utf_path_update.c_str(), static_cast<int>(utf_path_update.size()), SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     int changes = sqlite3_changes(db_);
@@ -87,17 +85,16 @@ bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seco
 
     if (changes > 0) return true;
 
-    // Insert new record.
     const char* ins_sql = "INSERT OR IGNORE INTO files (path, size, mtime, xxhash32, sha256, last_scan) VALUES (?, ?, ?, ?, ?, ?)";
     rc = sqlite3_prepare_v2(db_, ins_sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return false;
 
-    sqlite3_bind_text(stmt, 1, PathUtils::wide_to_utf8(info.path).c_str(), -1, SQLITE_STATIC);
+    std::string utf_path_insert = PathUtils::wide_to_utf8(info.path);
+    sqlite3_bind_text(stmt, 1, utf_path_insert.c_str(), static_cast<int>(utf_path_insert.size()), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, info.size);
     sqlite3_bind_int64(stmt, 3, info.mtime);
-    // FIX: Use int64 for xxhash to avoid truncation of values > 2B.
     sqlite3_bind_int64(stmt, 4, static_cast<int64_t>(info.xxhash));
-    sqlite3_bind_blob(stmt, 5, sha_blob.data(), static_cast<int>(sha_blob.size()), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 5, sha_blob.data(), static_cast<int>(sha_blob.size()), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, last_scan_seconds);
 
     rc = sqlite3_step(stmt);
@@ -123,7 +120,6 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
 
         fi.size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 1));
         fi.mtime = sqlite3_column_int64(stmt, 2);
-        // FIX: Use int64 for xxhash to match the bind side and avoid sign issues.
         fi.xxhash = static_cast<XxHash32>(sqlite3_column_int64(stmt, 3));
 
         const unsigned char* sha_raw = sqlite3_column_blob(stmt, 4);
@@ -140,8 +136,6 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
 }
 
 bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& current_paths) {
-    // Delete all cached records, then re-insert only paths that still exist on disk.
-    // This is efficient for large sets and avoids complex parameter binding.
     sqlite3_exec(db_, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
 
     const char* del_sql = "DELETE FROM files";

@@ -4,13 +4,11 @@
 #include "../organization/OrganizationSvc.h"
 #include "ImGuiView.h"
 
-// Render preview panel showing proposed actions for duplicate groups.
 void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     if (ImGui::TreeNode("Preview")) {
         for (const auto& group : groups) {
             ImGui::Indent();
 
-            // Show group header with strategy name and file count.
             const char* strategy_name = nullptr;
             switch (group.strategy) {
                 case Strategy::ExactMatch:      strategy_name = "Exact Match"; break;
@@ -22,7 +20,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
 
             ImGui::Text("%s (%zu files)", strategy_name, static_cast<size_t>(group.files.size()));
 
-            // Show action items — original file shown without arrow, duplicates show proposed change.
             for (size_t i = 0; i < group.files.size(); ++i) {
                 const auto& file = group.files[i];
                 std::string path = PathUtils::wide_to_utf8(file.path);
@@ -30,7 +27,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
                 char buf[512];
                 snprintf(buf, sizeof(buf), "%s", path.c_str());
 
-                // Checkbox for selection — duplicates are checked by default.
                 bool checked = (i == 0 || file.type == FileType::Duplicate);
 
                 ImGui::Checkbox(checked ? "##check" : "##check");
@@ -38,13 +34,12 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
                 if (i == 0) {
                     ImGui::Text("%s", buf);
                 } else {
-                    std::string renamed = PathUtils::wide_to_utf8(file.path);
-                    // Use Unicode arrow character for readability.
+                    std::string renamed = PathUtils::wide_to_utf8(
+                        OrganizationSvc::generate_renamed_path(file, static_cast<int>(i)));
                     ImGui::Text("%s \xe2\x86\x92 %s", buf, renamed.c_str());
                 }
             }
 
-            // Action buttons.
             if (ImGui::Button("Apply All")) {
                 auto actions = OrganizationSvc::generate_actions(group);
                 OrganizationSvc::apply(actions);
@@ -58,7 +53,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
             ImGui::Unindent();
         }
 
-        // Undo button at the bottom.
         if (ImGui::Button("Undo All Actions")) {
             OrganizationSvc::undo_all();
         }
@@ -67,12 +61,10 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     }
 }
 
-// Generate and preview actions for all duplicate groups.
 void generate_preview_actions(const std::vector<DuplicateGroup>& groups) {
     ImGuiView::set_preview_state(OrganizationSvc::generate_actions(groups));
 }
 
-// Apply all previewed actions.
 void apply_all_actions() {
     ImGuiView::apply_preview_actions();
 }
