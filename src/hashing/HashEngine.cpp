@@ -1,32 +1,17 @@
 #include "HashEngine.h"
-#include <fstream>
-#include <mutex>
-#include <future>
-#include <thread>
 #include <algorithm>
-
-constexpr size_t HASH_BUFFER_SIZE = 64 * 1024;
-
-bool HashEngine::s_initialized = false;
-std::once_flag HashEngine::s_init_flag;
 
 namespace {
     NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
         return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
     }
-
-    NTSTATUS init_aes_provider(BCRYPT_ALG_HANDLE& hAlg) {
-        return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
-    }
 } // anonymous namespace
 
 void HashEngine::init_bcrypt() {
-    if (s_initialized) return;
-
-    NTSTATUS status = init_sha256_provider(g_bcrypt_alg_);
-    if (status != ERROR_SUCCESS) return;
-
-    s_initialized = true;
+    std::call_once(s_init_flag, []() {
+        NTSTATUS status = init_sha256_provider(g_bcrypt_alg_);
+        s_initialized = (status == ERROR_SUCCESS);
+    });
 }
 
 void HashEngine::cleanup() {
@@ -35,11 +20,11 @@ void HashEngine::cleanup() {
         g_bcrypt_alg_ = nullptr;
     }
     s_initialized = false;
+    s_init_flag.clear();
 }
 
 HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
-    std::call_once(s_init_flag, []() { init_bcrypt(); });
 
     HANDLE hFile = CreateFileW(
         PathUtils::to_long_path(path).c_str(),
@@ -48,20 +33,19 @@ HashResult HashEngine::compute(const wchar_t* path) {
 
     if (hFile == INVALID_HANDLE_VALUE) return result;
 
-    LARGE_INTEGER fileSize;
+    LARGE_INTEGER fileSize{};
     GetFileSizeEx(hFile, &fileSize);
     uint64_t total_bytes = static_cast<uint64_t>(fileSize.QuadPart);
 
     BCRYPT_HASH_HANDLE hSha256{};
-    NTSTATUS status = BCryptCreateHash(g_bcrypt_alg_, &hSha256, nullptr, 0,
-                                        nullptr, 0, 0);
+    NTSTATUS status = BCryptCreateHash(g_bcrypt_alg_, &hSha256, nullptr, 0, nullptr, 0, 0);
     if (status != ERROR_SUCCESS) {
         CloseHandle(hFile);
         return result;
     }
 
     uint32_t xxhash_state = 0;
-    char buffer[HASH_BUFFER_SIZE];
+    char buffer[HASH_BUFFER_SIZE]{};
 
     while (total_bytes > 0) {
         DWORD bytes_to_read = static_cast<DWORD>(std::min(HASH_BUFFER_SIZE, total_bytes));
@@ -70,17 +54,14 @@ HashResult HashEngine::compute(const wchar_t* path) {
         if (bytesRead == 0) break;
 
         xxhash_state = XXH32(buffer, bytesRead, xxhash_state);
-
         BCryptHashData(hSha256, reinterpret_cast<uint8_t*>(buffer), bytesRead, 0);
 
         total_bytes -= bytesRead;
     }
 
     result.xxhash = xxhash_state;
-
     DWORD hashLen = sizeof(result.sha256);
     BCryptFinishHash(hSha256, result.sha256.data(), static_cast<DWORD>(result.sha256.size()), 0);
-
     BCryptDestroyHash(hSha256);
     CloseHandle(hFile);
 
@@ -89,15 +70,14 @@ HashResult HashEngine::compute(const wchar_t* path) {
 
 void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
                                std::vector<HashResult>& out) {
-    std::call_once(s_init_flag, []() { init_bcrypt(); });
+    init_bcrypt();
 
-    SYSTEM_INFO info;
+    SYSTEM_INFO info{};
     GetSystemInfo(&info);
     int num_threads = (info.dwNumberOfProcessors > 0) ?
         static_cast<int>(info.dwNumberOfProcessors - 1) : 3;
 
     ThreadPool pool(std::max(1, num_threads));
-
     out.resize(paths.size());
 
     std::vector<std::future<void>> futures;
@@ -105,10 +85,10 @@ void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
 
     for (size_t i = 0; i < paths.size(); ++i) {
         const auto& p = paths[i];
-        futures.push_back(pool.submit([this, &p, idx = i]() {
-            out[idx] = compute(p.c_str());
+        futures.push_back(std::async(std::launch::async, [this, &p, idx = i]() mutable -> HashResult {
+            return compute(p.c_str());
         }));
     }
 
-    pool.wait_all();
+    for (size_t i = 0; i < paths.size(); ++i) out[i] = futures[i].get();
 }

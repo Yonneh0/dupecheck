@@ -18,11 +18,9 @@ struct DuplicateGroup {
 class DuplicateEngine {
 public:
     explicit DuplicateEngine(StrategyConfig config);
-    
     std::vector<DuplicateGroup> find_duplicates(const std::vector<FileInfo>& files, uint32_t strategies);
-
     void set_directories(const std::vector<std::wstring>& dirs) { dirs_ = dirs; }
-    
+
 private:
     StrategyConfig config_;
     std::vector<std::wstring> dirs_;

@@ -86,9 +86,10 @@ inline long long get_file_mtime(const std::wstring& path) {
         ft.LowPart = info.ftLastWriteTime.dwLowDateTime;
         ft.HighPart = info.ftLastWriteTime.dwHighDateTime;
 
-        constexpr long long EPOCH_OFFSET = 13477420800LL;
         return static_cast<long long>(ft.QuadPart / 10000000) - EPOCH_OFFSET;
     }
+
+// Note: EPOCH_OFFSET is a global constexpr defined above and used by get_file_mtime().
 
 struct FileEntry {
     std::wstring path;

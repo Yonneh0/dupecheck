@@ -16,7 +16,7 @@ TEST(DuplicateEngineTest, ExactMatchBasic) {
     // Set same SHA256 hash for all files (simulating exact match).
     auto sha = std::array<uint8_t, 32>{};
     std::fill(sha.begin(), sha.end(), 42);
-    
+
     for (auto& f : files) {
         f.sha256 = sha;
         f.xxhash = XXH32(f.path.c_str(), wcslen(f.path), 0);
@@ -35,7 +35,7 @@ TEST(DuplicateEngineTest, NameVariantDetection) {
 
     auto sha = std::array<uint8_t, 32>{};
     std::fill(sha.begin(), sha.end(), 42);
-    
+
     for (auto& f : files) {
         f.sha256 = sha;
         f.xxhash = XXH32(f.path.c_str(), wcslen(f.path), 0);
@@ -54,7 +54,7 @@ TEST(DuplicateEngineTest, ExtensionFamilyDetection) {
 
     auto sha = std::array<uint8_t, 32>{};
     std::fill(sha.begin(), sha.end(), 42);
-    
+
     for (auto& f : files) {
         f.sha256 = sha;
         f.xxhash = XXH32(f.path.c_str(), wcslen(f.path), 0);

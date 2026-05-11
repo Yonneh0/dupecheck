@@ -2,16 +2,13 @@
 #include <vector>
 #include "../core/ActionModel.h"
 
-using HistoryEntry = ActionHistoryEntry;
-
 class UndoManager {
 public:
-    static void record_action(const HistoryEntry& entry);
-    
+    static void record_action(const ActionHistoryEntry& entry);
     static void undo(int count = 1);
-    
-    static std::vector<HistoryEntry> get_history();
+    static std::vector<ActionHistoryEntry> get_history();
+    static void clear();
 
 private:
-    static std::vector<HistoryEntry> history_;
+    inline static std::vector<ActionHistoryEntry> history_;
 };

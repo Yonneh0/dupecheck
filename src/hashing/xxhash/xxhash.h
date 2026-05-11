@@ -21,8 +21,7 @@
 #define XXH_PRIME64_4 0x85EBCA77C2B2AE3Du
 #define XXH_PRIME64_5 0x27D4EB2F9E3779F9ULL
 
-#define XXH_ROTLSB32(x, r) ((x << (r)) | (x >> (32 - (r))))
-#define XXH_ROTSB32(x, r)  ((x << (r)) | (x >> (32 - (r))))
+#define XXH_ROTL32(x, n)   ((x << (n)) | (x >> (32 - (n))))
 
 /* ===================== Public API ========================================== */
 
@@ -55,9 +54,4 @@ uint32_t compute_xxhash32(const uint8_t* data, size_t len, uint32_t seed);
 }
 #endif
 
-/* Inline convenience wrapper (C++ only). */
-#ifdef __cplusplus
-inline uint32_t compute_xxhash32(const void* data, size_t len, uint32_t seed) {
-    return compute_xxhash32(static_cast<const uint8_t*>(data), len, seed);
-}
-#endif
+
