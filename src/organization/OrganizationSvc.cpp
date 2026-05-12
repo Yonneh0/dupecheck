@@ -30,7 +30,7 @@ std::vector<ActionItem> OrganizationSvc::generate_actions(const DuplicateGroup& 
                     break;
                 }
                 case ActionType::Delete:
-                    item.new_name = "(delete)";
+                    item.new_name = "(deleted)";
                     break;
                 default:
                     break;
@@ -51,7 +51,8 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
 
         switch (item.action) {
             case ActionType::Rename: {
-                int idx = item.copy_index > 0 ? item.copy_index : 1;
+                // copy_index is zero-based offset from the original (i-1), so use it directly.
+                int idx = static_cast<int>(item.copy_index);
                 std::wstring new_name = generate_renamed_path(item.file, idx);
                 std::wstring old_name = PathUtils::to_long_path(item.file.path);
                 if (MoveFileExW(old_name.c_str(), PathUtils::to_long_path(new_name).c_str(), MOVEFILE_REPLACE_EXISTING)) {

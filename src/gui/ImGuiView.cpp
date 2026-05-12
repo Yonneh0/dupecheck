@@ -4,6 +4,9 @@
 #include "../database/DatabaseManager.h"
 #include "../scanner/CachedScannerService.h"
 #include "../hashing/HashEngine.h"
+#include "../organization/OrganizationSvc.h"
+#include "../utils/JsonConfig.h"
+#include "Controls.h"
 
 // Perform a full scan with the given path and update results + session.
 static void perform_scan_impl(const wchar_t* path) {
@@ -95,6 +98,9 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui_ImplWin32_Init(hwnd);
 
+    // Shared scan path — used by Controls.cpp.
+    static std::wstring shared_scan_path = default_path.empty() ? L"" : default_path;
+
     bool done = false;
     while (!done) {
         if (PeekMessage(&g_msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -106,68 +112,8 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // Path input with auto-scan on Enter.
-        static wchar_t path_buf[512] = L"";
-        const bool path_changed = ImGui::InputTextW(L"##path", path_buf, ARRAYSIZE(path_buf));
-        if (path_changed && wcslen(path_buf)) {
-            perform_scan_impl(path_buf);
-        }
-
-        // Scan button.
-        if (ImGui::Button("Scan", ImVec2(100, 30))) {
-            perform_scan_impl(path_buf);
-        }
-
-        // Preview panel - show results or empty state.
-        auto current_results = get_results();
-        render_preview_panel(current_results);
-
-        // Settings button in the corner.
-        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
-        if (ImGui::Button("Settings")) {
-            ImGui::OpenPopup("##settings");
-            const ImVec2 popup_size(420, 560);
-            ImGui::SetNextWindowSize(popup_size, ImGuiCond_Appearing);
-
-            StrategyConfig& cfg = get_strategy_config_impl();
-            int threshold = static_cast<int>(cfg.name_similarity_threshold);
-            uint32_t tolerance = cfg.hash_tolerance;
-            SYSTEM_INFO info{};
-            GetSystemInfo(&info);
-            int hasher_count = static_cast<int>(std::max(1, static_cast<int>(info.dwNumberOfProcessors) - 1));
-
-            if (ImGui::BeginPopupModal("##settings", nullptr, 0)) {
-                ImGui::Text("Settings");
-                ImGui::Separator();
-                ImGui::SetNextItemWidth(280);
-                ImGui::SliderInt("Name Similarity Threshold", &threshold, 0, 10);
-                ImGui::SetNextItemWidth(280);
-                ImGui::SliderInt("Hash Tolerance (bytes)", static_cast<int*>(&tolerance), 256, 4096);
-                ImGui::SetNextItemWidth(280);
-                ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, info.dwNumberOfProcessors - 1);
-
-                if (ImGui::Button("Save Settings")) {
-                    cfg.name_similarity_threshold = threshold;
-                    cfg.hash_tolerance = tolerance;
-                    std::unordered_map<std::string, std::string> config_data = {
-                        {"name_similarity_threshold", std::to_string(threshold)},
-                        {"hash_tolerance", std::to_string(tolerance)},
-                        {"max_concurrent_hashers", std::to_string(hasher_count)}
-                    };
-
-                    const wchar_t* env = _wgetenv(L"APPDATA");
-                    std::wstring settings_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\settings.json";
-                    JsonConfig::save(settings_path, config_data);
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-        }
-
-        // Undo all actions button.
-        if (ImGui::Button("Undo All Actions")) {
-            while (!OrganizationSvc::history_.empty()) OrganizationSvc::undo_actions();
-        }
+        // Render all controls in one place.
+        render_controls(shared_scan_path);
 
         ImGui::Render();
         ImGui_ImplWin32_RenderDrawData(ImGui::GetDrawData());

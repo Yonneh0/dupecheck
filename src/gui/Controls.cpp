@@ -22,46 +22,51 @@ static void browse_for_folder(std::wstring& path) {
     CoUninitialize();
 }
 
-// Validate the scan path and show a toast/error message.
-static void validate_path(const std::wstring& path) {
+/// Validate that the given path exists and is a directory. Returns true if valid.
+static bool validate_path(const std::wstring& path) {
     if (path.empty()) {
         MessageBoxW(nullptr, L"Please enter or browse for a folder path.", "Scan Path", MB_ICONWARNING);
-        return;
+        return false;
     }
 
     DWORD attrs = GetFileAttributesW(PathUtils::to_long_path(path).c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
         std::wstring msg = L"The path \"" + path + L"\" does not exist or is invalid.";
         MessageBoxW(nullptr, msg.c_str(), "Invalid Path", MB_ICONERROR);
-    } else if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        return false;
+    }
+    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         std::wstring msg = L"\"" + path + L"\" is a file, not a folder. Please select a directory.";
         MessageBoxW(nullptr, msg.c_str(), "Not a Folder", MB_ICONWARNING);
+        return false;
     }
+    return true;
 }
 
 void render_controls(std::wstring& scan_path) {
+    // Path input field — pressing Enter triggers a scan.
     wchar_t path_buf[512];
     if (!scan_path.empty()) wcscpy_s(path_buf, scan_path.c_str());
     else path_buf[0] = L'\0';
 
-    // InputText for the scan path. Pressing Enter triggers a scan.
     const bool path_changed = ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), static_cast<int>(sizeof(path_buf) / sizeof(wchar_t)));
     if (path_changed && wcslen(path_buf)) {
-        // Validate on the fly — only if non-empty.
-        DWORD attrs = GetFileAttributesW(PathUtils::to_long_path(path_buf).c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES) {
-            scan_path.assign(path_buf);
-        }
+        scan_path.assign(path_buf);
     }
 
+    // Browse button.
     ImGui::SameLine();
     if (ImGui::Button("Browse")) browse_for_folder(scan_path);
 
-    // Scan button.
+    // Scan button — validates path then triggers a full scan.
     ImGui::SameLine(320, 8);
-    bool scanning = false;
+    if (ImGui::Button("Scan", ImVec2(80, 30))) {
+        if (validate_path(scan_path)) {
+            ImGuiView::perform_scan(scan_path.c_str());
+        }
+    }
 
-    // Show current status at the top-right of the window.
+    // Path status indicator — positioned below controls to persist.
     if (scan_path.empty()) {
         ImGui::TextDisabled("[No path set — enter a folder or click Browse]");
     } else {
@@ -76,20 +81,15 @@ void render_controls(std::wstring& scan_path) {
             ImGui::PopStyleColor();
         } else {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 1.0f, 0.6f, 1.0f));
-            ImGui::Text(L"Path OK");
+            ImGui::Text("Path OK");
             ImGui::PopStyleColor();
         }
-    }
-
-    if (ImGui::Button("Scan", ImVec2(80, 30))) {
-        validate_path(scan_path);
-        scanning = true;
     }
 
     // Render preview panel below controls.
     render_preview_panel(ImGuiView::get_results());
 
-    // Settings button in the corner.
+    // Settings button in the corner (rendered by its own function).
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
     render_settings_dialog();
 }

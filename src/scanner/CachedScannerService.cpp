@@ -1,9 +1,22 @@
+#include <windows.h>
 #include "CachedScannerService.h"
 #include "../hashing/HashEngine.h"
 
-CachedScannerService::CachedScannerService(const std::wstring& db_path) : manager_(db_path) {}
+// The database path is set via the init() method which uses get_default_db_path().
+bool CachedScannerService::init() {
+    // Use the default DB path (same as ImGuiView).
+    wchar_t appdata[MAX_PATH];
+    DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
+    if (len == 0 || len > static_cast<DWORD>(ARRAYSIZE(appdata))) return false;
 
-bool CachedScannerService::init() { return manager_.init(); }
+    std::wstring db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
+    auto dir_pos = db_path.find_last_of(L'\\');
+    if (dir_pos != std::wstring::npos) {
+        CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
+    }
+    manager_ = DatabaseManager{db_path};
+    return manager_.init();
+}
 
 std::vector<FileInfo> CachedScannerService::scan(const wchar_t* path) {
     // Load all cached entries from the database.

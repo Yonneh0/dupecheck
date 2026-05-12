@@ -80,5 +80,3 @@ inline HashResult HashEngine::compute(const wchar_t* path) {
     CloseHandle(hFile);
     return result;
 }
-
-#endif // HashEngine_H

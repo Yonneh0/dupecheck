@@ -1,6 +1,6 @@
 # DupeCheck — Duplicate File Finder & Organizer
 
-A fast duplicate file finder for Windows built with C++20. Scans folders and drives using multi-tier hash analysis (XxHash32 + SHA256) to detect exact duplicates, renamed copies, modified files, extension variants, and folder-level copies in a single pass.
+A fast duplicate file finder for Windows built with C++20. Scans folders and drives using multi-tier hash analysis (XxHash32 + SHA256) to detect exact duplicates, renamed copies, modified files, extension variants, and folder-level copies in a single I/O pass.
 
 ## Features
 
@@ -15,7 +15,7 @@ A fast duplicate file finder for Windows built with C++20. Scans folders and dri
 
 - **Batch organization actions:** rename with suffixes, move to duplicate folders, delete copies, create symlinks, or archive duplicates. Full undo support via an action history stack.
 
-- **Single-pass hashing** — computes XxHash32 and SHA256 in a single I/O pass using `std::async` across multiple threads (one per file).
+- **Single-pass hashing** — computes XxHash32 and SHA256 in a single I/O pass using `std::async` (one thread per file) across multiple threads.
 
 ## Building
 
@@ -88,38 +88,49 @@ The `CachedScannerService` maintains a SQLite database at `%APPDATA%\DupeCheck\d
 ```
 src/
 ├── main.cpp              # Entry point — CLI args → GUI or service mode
-├── core/
+│
+├── core/                 # Core type definitions
 │   ├── FileInfo.h        # FileInfo struct + PathUtils namespace (path helpers)
 │   ├── Strategy.h        # Strategy enum + StrategyConfig
 │   └── ActionModel.h     # FileType, ActionType, ActionItem, CliCommand
-├── engine/               # Inline headers — one function per file
-│   ├── DuplicateEngine.{h,cpp}
-│   ├── ExactMatch.h
-│   ├── NameVariant.h
-│   ├── SizeHashSimilar.h
-│   ├── ExtensionFamily.h
-│   └── FolderCopy.h
+│
+├── engine/               # Header-only detection strategies (one function per file)
+│   ├── DuplicateEngine.{h,cpp}  # Strategy dispatching & result merging
+│   ├── ExactMatch.h              # SHA256 exact-match grouping
+│   ├── NameVariant.h             # Levenshtein name similarity
+│   ├── SizeHashSimilar.h         # XxHash binning for similar files
+│   ├── ExtensionFamily.h         # Cross-extension family detection (jpg/jpeg)
+│   └── FolderCopy.h              # Directory tree hashing for folder copies
+│
 ├── scanner/
 │   └── CachedScannerService.{h,cpp}  # Incremental caching over SQLite
+│
 ├── hashing/
-│   ├── HashEngine.{h,cpp}    # SHA256 (BCrypt) + XxHash32 single-pass
-│   └── xxhash_wrapper.h      # Thin C++ wrapper around XXH32
+│   ├── HashEngine.{h,cpp}    # SHA256 (BCrypt) + XxHash32 single-pass computation
+│   ├── xxhash/               # Local XXH32 implementation
+│   │   ├── xxhash.h          # XXH32 public API + streaming interface
+│   │   └── xxhash.cpp        # Compilation unit for CMake linking
+│   └── xxhash_wrapper.h      # Thin C++ wrapper around compute_xxhash32()
+│
 ├── database/
-│   └── DatabaseManager.{h,cpp}  # SQLite persistence layer
-├── organization/
+│   └── DatabaseManager.{h,cpp}  # SQLite persistence layer (WAL mode)
+│
+├── organization/         # Batch actions on duplicate groups
 │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration + undo history
-│   ├── MergeAction.h            # Move, Archive, Delete, Symlink helpers
-│   └── RenameAction.h           # Lightweight rename helper
-├── service/
-│   ├── ServiceHost.{h,cpp}      # Windows service registration & lifecycle
-│   └── NamedPipeServer.{h,cpp>  GUI-service IPC (named pipe)
-├── gui/
-│   ├── Controls.cpp/h            # Path input + status indicators
-│   ├── PreviewPanel.{h,cpp>     Action preview widget per group
-│   ├── SettingsDialog.{h,cpp>    Modal settings dialog
+│   └── MergeAction.h            # Move, Archive, Delete, Symlink helpers
+│
+├── service/              # Windows Service + CLI
+│   ├── ServiceHost.{h,cpp}      # Service registration & lifecycle
+│   └── NamedPipeServer.{h,cpp>  # GUI-service IPC (named pipe)
+│
+├── gui/                  # ImGui-based user interface (Win32 backend)
+│   ├── Controls.cpp/h            # Path input, scan/browse buttons + status indicators
+│   ├── PreviewPanel.{h,cpp}     # Action preview widget per duplicate group
+│   ├── SettingsDialog.{h,cpp>   # Modal settings dialog
 │   └── ImGuiView.{h,cpp}         Main window + event loop (run_gui)
-└── utils/
-    ├── JsonConfig.{h,cpp>        Lightweight JSON config reader/writer
+│
+└── utils/                # Shared utilities
+    ├── JsonConfig.{h,cpp}        Lightweight JSON config reader/writer
     ├── Levenshtein.h             Templated edit-distance algorithm
     └── ExtensionFamilyMap.h      Built-in extension family mappings
 ```

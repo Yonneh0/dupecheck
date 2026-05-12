@@ -12,10 +12,17 @@ static StrategyConfig& get_strategy_config_impl() {
 void render_settings_dialog() {
     if (!ImGui::Button("Settings")) return;
     ImGui::OpenPopup("##settings");
-    const ImVec2 popup_size(420, 560);
+    const ImVec2 popup_size(400, 520);
     ImGui::SetNextWindowSize(popup_size, ImGuiCond_Appearing);
 
     StrategyConfig& cfg = get_strategy_config_impl();
+
+    // Save original values so Cancel restores them correctly.
+    int orig_threshold = cfg.name_similarity_threshold;
+    uint32_t orig_tolerance = cfg.hash_tolerance;
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+    int orig_hasher_count = static_cast<int>(std::max(1, static_cast<int>(info.dwNumberOfProcessors) - 1));
 
     // Load current settings from disk so the dialog is pre-populated.
     const wchar_t* env = _wgetenv(L"APPDATA");
@@ -24,9 +31,7 @@ void render_settings_dialog() {
 
     int threshold = cfg.name_similarity_threshold;
     uint32_t tolerance = cfg.hash_tolerance;
-    SYSTEM_INFO info{};
-    GetSystemInfo(&info);
-    int hasher_count = static_cast<int>(std::max(1, static_cast<int>(info.dwNumberOfProcessors) - 1));
+    int hasher_count = orig_hasher_count;
 
     // Restore from disk if present.
     auto load_val = [&](const char* key, int& out) {
@@ -43,11 +48,11 @@ void render_settings_dialog() {
         ImGui::Text("Settings");
         ImGui::Separator();
         ImGui::SetNextItemWidth(280);
-        ImGui::SliderInt("Name Similarity Threshold (#1)", &threshold, 0, 10);
+        ImGui::SliderInt("Name Similarity Threshold", &threshold, 0, 10);
         ImGui::SetNextItemWidth(280);
         ImGui::SliderInt("Hash Tolerance (bytes)", static_cast<int*>(&tolerance), 256, 4096);
         ImGui::SetNextItemWidth(280);
-        ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, info.dwNumberOfProcessors - 1);
+        ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, std::max(1, info.dwNumberOfProcessors - 1));
 
         if (ImGui::Button("Save Settings")) {
             cfg.name_similarity_threshold = threshold;
@@ -64,8 +69,8 @@ void render_settings_dialog() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) {
-            cfg.name_similarity_threshold = threshold;
-            cfg.hash_tolerance = tolerance;
+            cfg.name_similarity_threshold = orig_threshold;
+            cfg.hash_tolerance = orig_tolerance;
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

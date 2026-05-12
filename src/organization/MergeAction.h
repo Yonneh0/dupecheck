@@ -3,6 +3,11 @@
 #include "../core/FileInfo.h"
 #include <windows.h>
 
+// =============================================================================
+// File operation helpers for batch actions on duplicate groups.
+// Each class provides apply() and undo() static methods.
+// =============================================================================
+
 /// Move a file into the duplicates subfolder of its parent directory.
 class MergeAction {
 public:
@@ -23,7 +28,7 @@ public:
     }
 };
 
-/// Archive a file into the duplicates subfolder.
+/// Archive a file into the duplicates subfolder (copy operation).
 class ArchiveAction {
 public:
     static bool apply(const FileInfo& file, const wchar_t* output_path) {

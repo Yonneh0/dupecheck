@@ -5,8 +5,12 @@
 #include <array>
 #include <cstdint>
 
-constexpr long long EPOCH_OFFSET = 13477420800LL;   // FILETIME (Jan 1, 1601) → Unix epoch (Jan 1, 1970), seconds.
-constexpr size_t HASH_BUFFER_SIZE = 65536;           // 64 KB read buffer for hashing.
+/// Offset from FILETIME epoch (Jan 1, 1601) to Unix epoch (Jan 1, 1970) in seconds.
+/// FILETIME is measured in 100-nanosecond intervals since Jan 1, 1601; dividing by 10,000,000 converts to seconds.
+constexpr long long EPOCH_OFFSET = 13477420800LL;
+
+/// Read buffer size for hashing I/O — 64 KB is optimal for sequential file reads on Windows.
+constexpr size_t HASH_BUFFER_SIZE = 65536;
 
 using Sha256 = std::array<uint8_t, 32>;
 using XxHash32 = uint32_t;
