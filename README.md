@@ -11,26 +11,24 @@ A fast duplicate file finder for Windows built with C++20. Scans folders and dri
   - **Extension Family (8)** — same content across extension families (`jpg`/`jpeg`, `docx`/`doc`)
   - **Folder Copy (16)** — entire directory trees copied to new locations using hierarchical tree hashing
 
-- **Cached incremental scanning** via a SQLite database in WAL mode. Only re-hashes files that have changed since the last scan.
+- **Cached incremental scanning** via a SQLite database in WAL mode. Only re-hashes files that have changed since the last scan, based on size and modification time.
 
 - **Batch organization actions:** rename with suffixes, move to duplicate folders, delete copies, create symlinks, or archive duplicates. Full undo support.
 
 - **High-performance parallel hashing** — computes XxHash32 and SHA256 in a single I/O pass using multi-threaded workers.
-
-- **Windows Service** — installable service that periodically scans your configured path. CLI commands for installation (`--install-service`, `--uninstall-service`).
 
 ## Building
 
 ### Prerequisites
 - CMake 3.24+
 - MSVC (Visual Studio 2019+) with Windows SDK
-- External dependencies: ImGui, SQLite bundled in the `external/` directory. Tests compile as standalone executables without GoogleTest.
+- External dependencies: ImGui, SQLite bundled in the `external/` directory.
 
 ### Quick Start
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
-.\build\Release\DupeCheck.exe
+.\build\DupeCheck.exe
 ```
 
 ## Usage
@@ -38,7 +36,7 @@ cmake --build build --config Release
 1. Open DupeCheck and enter a folder or drive path (or click Browse).
 2. Click **Scan** — results appear categorized by duplicate type.
 3. Use **Apply All** / **Undo Last** to manage actions per group.
-4. Open **Settings** to configure detection thresholds, extension families, and service options.
+4. Open **Settings** to configure detection thresholds and extension families.
 
 ### Windows Service Installation
 ```bash
@@ -75,63 +73,61 @@ dupecheck/
 │   ├── imgui/                      # Dear ImGui source files + Win32 backend
 │   └── sqlite3/                    # SQLite amalgamation
 ├── src/
-│   ├── main.cpp                    # Entry point: WinMain (GUI), main (service)
+│   ├── main.cpp                    # Entry point: CLI args → GUI or service
 │   ├── cli.cpp                     # CLI argument parsing (--install-service, etc.)
 │   │
 │   ├── core/                       # Core type definitions
-│   │   ├── FileInfo.h              # File metadata struct + PathUtils namespace
-│   │   ├── Strategy.h              # Strategy enum + config
-│   │   └── ActionModel.h           # Actions (rename, move, delete, etc.)
+│   │   ├── ActionModel.h           # FileType, ActionType, ActionItem, ActionHistoryEntry
+│   │   ├── FileInfo.h              # FileInfo struct + PathUtils namespace (enumerate_files)
+│   │   └── Strategy.h              # Strategy enum + StrategyConfig
 │   │
 │   ├── hashing/                    # Multi-tier hashing engine
 │   │   ├── xxhash/                 # Local XxHash32 implementation
-│   │   │   ├── xxhash.cpp/.h       # Core algorithm + streaming API
-│   │   └── HashEngine.{cpp,h}      # Single-pass SHA256+XxHash, thread pool
+│   │   ├── HashEngine.{h,cpp}      # Single-pass SHA256+XxHash, batch compute
 │   │   └── ThreadPool.cpp          # Thread pool with work queue
 │   │
 │   ├── scanner/                    # File enumeration & caching
-│   │   ├── FileScanner.{cpp,h}     # Recursive directory traversal + hashing
-│   │   └── CachedScannerService.{cpp,h}  # SQLite-backed incremental scanning
+│   │   ├── FileScanner.{h,cpp}     # Recursive directory traversal + hashing
+│   │   └── CachedScannerService.{h,cpp}  # SQLite-backed incremental scanning
 │   │
 │   ├── engine/                     # Duplicate detection strategies
-│   │   ├── DuplicateEngine.{cpp,h} # Strategy dispatching & result merging
-│   │   ├── ExactMatch.h            # SHA256 match
-│   │   ├── NameVariant.h           # Levenshtein name similarity
-│   │   ├── SizeHashSimilar.h       # Size + XxHash binning
-│   │   ├── ExtensionFamily.h       # Extension family mapping
-│   │   └── FolderCopy.h            # Directory tree hashing
+│   │   ├── DuplicateEngine.{h,cpp} # Strategy dispatching & result merging
+│   │   ├── ExactMatch.h            SHA256 match
+│   │   ├── NameVariant.h           Levenshtein name similarity
+│   │   ├── SizeHashSimilar.h       Size + XxHash binning
+│   │   ├── ExtensionFamily.h       Extension family mapping
+│   │   └── FolderCopy.h            Directory tree hashing
 │   │
 │   ├── organization/               # Batch actions on duplicate groups
-│   │   ├── OrganizationSvc.{cpp,h} # Action orchestration & history
-│   │   ├── RenameAction.h          # Rename with configurable format strings
-│   │   ├── MoveAction.h            # Move to duplicates folder
-│   │   ├── DeleteAction.h          # Delete copies from disk
-│   │   ├── SymlinkAction.h         # CreateWindows symbolic links
-│   │   ├── ArchiveAction.h         # Zip/archive duplicates
-│   │   └── UndoManager.h           # History stack for undo support
+│   │   ├── OrganizationSvc.{h,cpp} # Main action orchestration (rename, move, delete)
+│   │   ├── RenameAction.h          Lightweight rename helper
+│   │   ├── MoveAction.h            Lightweight move helper
+│   │   ├── DeleteAction.h          Lightweight delete helper
+│   │   ├── SymlinkAction.h         Lightweight symlink creation/undo
+│   │   ├── ArchiveAction.h         Lightweight archive/zip duplicates
+│   │   └── UndoManager.h           History stack for undo support
 │   │
 │   ├── database/                   # SQLite persistence layer
-│   │   ├── DatabaseManager.{cpp,h} # Schema, CRUD, WAL mode
+│   │   └── DatabaseManager.{h,cpp} # Schema, CRUD operations, WAL mode
 │   │
 │   ├── service/                    # Windows Service + IPC
-│   │   ├── ServiceHost.{cpp,h}     # Service registration & lifecycle
-│   │   └── NamedPipeServer.{cpp,h} # IPC pipe for GUI ↔ service communication
+│   │   ├── ServiceHost.{h,cpp}     Service registration & lifecycle
+│   │   └── NamedPipeServer.{h,cpp} # IPC pipe for GUI ↔ service communication
 │   │
 │   ├── gui/                        # ImGui-based user interface (Win32 backend)
-│   │   ├── ImGuiView.{cpp,h}       # Main window rendering loop
-│   │   ├── Controls.cpp            # Path input, scan/browse buttons
-│   │   ├── PreviewPanel.{cpp,h}    # Action preview widget per group
-│   │   └── SettingsDialog.{cpp,h}  # Modal settings dialog
+│   │   ├── Controls.cpp            Path input, scan/browse buttons
+│   │   ├── PreviewPanel.{h,cpp}    Action preview widget per group
+│   │   └── SettingsDialog.{h,cpp}  Modal settings dialog
 │   │
 │   └── utils/                      # Shared utilities
-│       ├── JsonConfig.{cpp,h}      # Lightweight JSON config reader/writer (UTF-8)
-│       ├── Levenshtein.h           # Templated Levenshtein distance algorithm
-│       └── ExtensionFamilyMap.h    # Built-in extension family mappings
+│       ├── JsonConfig.{h,cpp}      Lightweight JSON config reader/writer
+│       ├── Levenshtein.h           Templated Levenshtein distance algorithm
+│       └── ExtensionFamilyMap.h    Built-in extension family mappings
 │
 ├── resources/                      # Application resources
-│   └── dupecheck.rc                # Windows resource file (icon)
+│   └── appicon.ico                 Windows icon resource
 │
-└── tests/                          # Unit tests (standalone, no GoogleTest)
+└── tests/                          # Unit tests (standalone)
 ```
 
 ## License

@@ -1,22 +1,15 @@
 #include "ImGuiView.h"
 #include <imgui.h>
 #include <imgui_impl_win32.h>
+#include "../database/DatabaseManager.h"
+#include "../scanner/CachedScannerService.h"
 #include "../hashing/HashEngine.h"
-#include "../scanner/FileScanner.h"
-#include "../engine/DuplicateEngine.h"
-#include "../organization/OrganizationSvc.h"
-
-const wchar_t* ImGuiView::WND_CLASS_NAME = L"DupeCheck";
-
-static std::vector<DuplicateGroup> s_results;
-static DatabaseManager* s_db = nullptr;
-StrategyConfig g_config{3, 1024};
 
 bool ImGuiView::init(HINSTANCE hInstance, int nCmdShow) {
     HICON hIcon = LoadIcon(hInstance, IDI_APPLICATION);
     HCURSOR hCursor = LoadCursor(nullptr, IDC_ARROW);
 
-    WNDCLASSEXW wc = {};
+    WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = DefWindowProc;
     wc.hInstance = hInstance;
@@ -24,58 +17,106 @@ bool ImGuiView::init(HINSTANCE hInstance, int nCmdShow) {
     wc.hIcon = hIcon;
     wc.hCursor = hCursor;
 
-    ATOM atom = RegisterClassEx(&wc);
-    return atom != 0;
+    return RegisterClassEx(&wc) != 0;
 }
 
-void ImGuiView::run() {
-    HWND hwnd = CreateWindow(WND_CLASS_NAME, L"DupeCheck",
-                             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                             CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768,
-                             nullptr, nullptr, GetModuleHandle(nullptr), nullptr);
+static MSG g_msg{};
 
-    if (!hwnd) return;
+int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path) {
+    HWND hwnd = CreateWindowExW(0, WND_CLASS_NAME, L"DupeCheck",
+                                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768,
+                                nullptr, nullptr, GetModuleHandle(nullptr), nullptr);
 
-    MSG msg = {};
-    bool done = false;
+    if (!hwnd) return 1;
 
-    IMGUI_CHECKVERSION();
+    // Initialize database.
+    wchar_t appdata[MAX_PATH];
+    DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
+    std::wstring db_path;
+    if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(appdata))) {
+        db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
+    } else {
+        const wchar_t* env = _wgetenv(L"APPDATA");
+        db_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\dupecheck.db";
+    }
+
+    auto dir_pos = db_path.find_last_of(L'\\');
+    if (dir_pos != std::wstring::npos) {
+        CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
+    }
+
+    DatabaseManager db(db_path);
+    if (!db.init()) {
+        MessageBoxW(nullptr, L"Failed to initialize database.", L"Error", MB_ICONERROR);
+        return 1;
+    }
+
+    s_db_ = &db;
+
+    // Initialize hashing.
+    HashEngine::init_bcrypt();
+
+    // Setup ImGui.
     ImGui::CreateContext();
-
     auto& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
     ImGui_ImplWin32_Init(hwnd);
 
+    bool done = false;
     while (!done) {
-        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-
-            if (msg.message == WM_QUIT) done = true;
+        if (PeekMessage(&g_msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&g_msg);
+            DispatchMessage(&g_msg);
+            if (g_msg.message == WM_QUIT) done = true;
         }
 
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
+        static wchar_t path_buf[512] = L"";
+        if (!default_path.empty() && wcslen(path_buf) == 0) {
+            wcscpy(path_buf, default_path.c_str());
+        }
+
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-
         if (ImGui::Begin("DupeCheck")) {
-            static wchar_t path_buf[512] = L"";
-
+            // Path input.
             if (ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), sizeof(path_buf) / sizeof(wchar_t))) {
-                start_scan(path_buf);
+                CachedScannerService scanner(path_buf);
+                if (scanner.init()) {
+                    auto cached_files = scanner.scan(path_buf);
+                    DuplicateEngine engine(config_);
+                    results_ = engine.find_duplicates(cached_files, 0x1F);
+
+                    int64_t path_hash = 0;
+                    for (char c : PathUtils::wide_to_utf8(path_buf)) {
+                        path_hash += static_cast<int64_t>(c);
+                    }
+                    db.save_session(path_hash, static_cast<int>(cached_files.size()),
+                                    static_cast<int>(results_.size()), 0x1F);
+                }
             }
 
-            for (auto& group : s_results) {
+            if (ImGui::Button("Scan", ImVec2(100, 30))) {
+                CachedScannerService scanner(path_buf);
+                if (scanner.init()) {
+                    auto cached_files = scanner.scan(path_buf);
+                    DuplicateEngine engine(config_);
+                    results_ = engine.find_duplicates(cached_files, 0x1F);
+                }
+            }
+
+            // Render duplicate groups.
+            for (const auto& group : results_) {
                 bool open = ImGui::TreeNodeEx(
-                    &group,
+                    static_cast<const void*>(&group),
                     "%s (%zu files)",
                     strategy_to_string(group.strategy).c_str(),
                     static_cast<size_t>(group.files.size()));
 
                 if (open) {
-                    for (auto& file : group.files) {
+                    for (const auto& file : group.files) {
                         std::string path = PathUtils::wide_to_utf8(file.path);
                         ImGui::Text("  %s", path.c_str());
                     }
@@ -83,19 +124,14 @@ void ImGuiView::run() {
                 }
             }
 
+            // Action buttons.
             if (ImGui::Button("Apply All")) {
-                auto actions = OrganizationSvc::generate_actions(s_results);
-                OrganizationSvc::apply(actions);
+                auto items = OrganizationSvc::generate_actions(results_, ActionType::Rename);
+                OrganizationSvc::apply(items);
             }
-
             ImGui::SameLine();
             if (ImGui::Button("Undo Last")) {
                 OrganizationSvc::undo_actions();
-            }
-
-            ImGui::SameLine(500);
-            if (ImGui::Button("Settings")) {
-                // Open settings dialog in a real implementation.
             }
 
             ImGui::End();
@@ -106,59 +142,7 @@ void ImGuiView::run() {
     }
 
     ImGui_ImplWin32_Shutdown();
+    HashEngine::cleanup();
     ImGui::DestroyContext();
-}
-
-void ImGuiView::start_scan(const wchar_t* path) {
-    FileScanner scanner([path](uint64_t total, uint64_t processed) {
-        (void)total;
-        (void)processed;
-    });
-
-    auto files = scanner.scan(path);
-
-    DuplicateEngine engine(g_config);
-    s_results = engine.find_duplicates(files,
-        static_cast<uint32_t>(Strategy::ExactMatch) |
-        static_cast<uint32_t>(Strategy::NameVariant) |
-        static_cast<uint32_t>(Strategy::SizeHashSimilar) |
-        static_cast<uint32_t>(Strategy::ExtensionFamily));
-
-    if (s_db) {
-        int64_t path_hash = 0;
-        for (char c : PathUtils::wide_to_utf8(path)) {
-            path_hash += static_cast<int64_t>(c);
-        }
-        s_db->save_session(path_hash, static_cast<int>(files.size()),
-                           static_cast<int>(s_results.size()),
-                           Strategy::ExactMatch | Strategy::NameVariant |
-                           Strategy::SizeHashSimilar | Strategy::ExtensionFamily);
-    }
-}
-
-std::vector<DuplicateGroup> ImGuiView::get_results() {
-    return s_results;
-}
-
-void ImGuiView::apply_preview_actions() {
-    auto actions = OrganizationSvc::generate_actions(s_results);
-    OrganizationSvc::apply(actions);
-}
-
-int run_gui(HINSTANCE hInstance, int nCmdShow,
-            const std::wstring& default_path, DatabaseManager& db) {
-
-    if (!ImGuiView::init(hInstance, nCmdShow)) {
-        MessageBoxW(nullptr, L"Failed to initialize window.", L"Error", MB_ICONERROR);
-        return 1;
-    }
-
-    s_db = &db;
-
-    g_config.service_enabled = true;
-
-    ImGuiView::start_scan(default_path.c_str());
-    ImGuiView::run();
-
-    return 0;
+    return static_cast<int>(g_msg.wParam);
 }

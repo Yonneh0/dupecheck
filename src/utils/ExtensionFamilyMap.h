@@ -1,18 +1,16 @@
 #pragma once
-
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+// Extension family mapping for detecting duplicates across related extensions (e.g., jpg/jpeg).
 class ExtensionFamilyMap {
 public:
     static std::string get_family(const std::string& ext);
-    static std::vector<std::string> get_family_extensions(const std::string& ext);
     static bool is_same_family(const std::string& a, const std::string& b) { return get_family(a) == get_family(b); }
 
 private:
     ExtensionFamilyMap() = delete;
-
     static const std::unordered_map<std::string, std::string>& builtin_families();
 };
 
@@ -34,15 +32,4 @@ inline std::string ExtensionFamilyMap::get_family(const std::string& ext) {
     auto it = builtin_families().find(ext);
     if (it != builtin_families().end()) return it->second;
     return ext;
-}
-
-inline std::vector<std::string> ExtensionFamilyMap::get_family_extensions(const std::string& ext) {
-    auto it = builtin_families().find(ext);
-    if (it == builtin_families().end()) return {ext};
-    const std::string& family = it->second;
-    std::vector<std::string> result;
-    for (const auto& [e, f] : builtin_families()) {
-        if (f == family) result.push_back(e);
-    }
-    return result;
 }

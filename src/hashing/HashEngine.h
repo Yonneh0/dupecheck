@@ -1,56 +1,80 @@
-#pragma once
+#include "HashEngine.h"
 
-#include <atomic>
-#include <functional>
-#include <future>
-#include <mutex>
-#include <thread>
-#include <vector>
-#include <windows.h>
-#include "../core/FileInfo.h"
+void HashEngine::init_bcrypt() {
+    std::call_once(s_init_flag, []() {
+        NTSTATUS status = BCryptOpenAlgorithmProvider(&g_bcrypt_alg_, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+        s_initialized = (status == ERROR_SUCCESS);
+    });
+}
 
-class HashEngine {
-public:
-    static void init_bcrypt();
-    static void cleanup();
-    static HashResult compute(const wchar_t* path);
-    static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
-    static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
+void HashEngine::cleanup() {
+    if (g_bcrypt_alg_) {
+        BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
+        g_bcrypt_alg_ = nullptr;
+    }
+    s_initialized = false;
+}
 
-private:
-    inline static BCRYPT_ALG_HANDLE g_bcrypt_alg_ = nullptr;
-    inline static bool s_initialized = false;
-    inline static std::once_flag s_init_flag;
-};
+BCRYPT_ALG_HANDLE HashEngine::get_alg_handle() { return g_bcrypt_alg_; }
 
-class ThreadPool {
-public:
-    explicit ThreadPool(int num_threads);
-    ~ThreadPool();
+HashResult HashEngine::compute(const wchar_t* path) {
+    HashResult result{};
 
-    template<class F, class... Args>
-    auto submit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
-        using RetType = decltype(f(args...));
-        auto task = std::make_shared<std::packaged_task<RetType()>>(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
-        std::future<RetType> result = task->get_future();
-        {
-            std::lock_guard<std::mutex> lock(queue_mutex_);
-            if (stop_) throw std::runtime_error("submit on stopped ThreadPool");
-            tasks_.emplace([task]() { (*task)(); });
-        }
-        return result;
+    HANDLE hFile = CreateFileW(
+        PathUtils::to_long_path(path).c_str(),
+        GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) return result;
+
+    LARGE_INTEGER fileSize{};
+    GetFileSizeEx(hFile, &fileSize);
+    uint64_t total_bytes = static_cast<uint64_t>(fileSize.QuadPart);
+
+    BCRYPT_HASH_HANDLE hSha256{};
+    NTSTATUS status = BCryptCreateHash(g_bcrypt_alg_, &hSha256, nullptr, 0, nullptr, 0, 0);
+    if (status != ERROR_SUCCESS) { CloseHandle(hFile); return result; }
+
+    uint32_t xxhash_state = 0;
+    char buffer[HASH_BUFFER_SIZE]{};
+
+    while (total_bytes > 0) {
+        DWORD bytes_to_read = static_cast<DWORD>(std::min(HASH_BUFFER_SIZE, total_bytes));
+        DWORD bytesRead = 0;
+        if (!ReadFile(hFile, buffer, bytes_to_read, &bytesRead, nullptr)) break;
+        if (bytesRead == 0) break;
+
+        xxhash_state = XXH32(buffer, bytesRead, xxhash_state);
+        BCryptHashData(hSha256, reinterpret_cast<uint8_t*>(buffer), bytesRead, 0);
+        total_bytes -= bytesRead;
     }
 
-private:
-    void worker_loop();
-    bool stop_ = false;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex queue_mutex_;
-    int active_tasks_ = 0;
-    std::condition_variable cv_;
-    std::condition_variable done_cv_;
-    std::vector<std::thread> workers_;
+    result.xxhash = xxhash_state;
+    BCryptFinishHash(hSha256, result.sha256.data(), static_cast<DWORD>(result.sha256.size()), 0);
+    BCryptDestroyHash(hSha256);
+    CloseHandle(hFile);
+    return result;
+}
 
-public:
-    void wait_all();
-};
+// Multi-threaded batch hash computation using the system thread pool.
+void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
+                               std::vector<HashResult>& out) {
+    init_bcrypt();
+
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+    int num_threads = (info.dwNumberOfProcessors > 0) ? static_cast<int>(info.dwNumberOfProcessors - 1) : 3;
+
+    // Launch one async task per file and let the runtime handle threading.
+    std::vector<std::future<HashResult>> futures(paths.size());
+    out.resize(paths.size());
+
+    for (size_t i = 0; i < paths.size(); ++i) {
+        const auto& p = paths[i];
+        futures[i] = std::async(std::launch::async, [&p]() -> HashResult { return compute(p.c_str()); });
+    }
+
+    for (size_t i = 0; i < paths.size(); ++i) {
+        out[i] = futures[i].get();
+    }
+}

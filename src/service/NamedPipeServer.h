@@ -1,14 +1,15 @@
 #pragma once
 #include <string>
 #include <memory>
-#include "database/DatabaseManager.h"
 
+// Forward declaration of DatabaseManager to avoid circular dependency.
+class DatabaseManager;
+
+// Named pipe server for GUI-service IPC communication.
 class NamedPipeServer {
 public:
     explicit NamedPipeServer(const std::wstring& pipe_name, DatabaseManager* db);
-
     void start();
-
     ~NamedPipeServer();
 
 private:
