@@ -61,7 +61,7 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
                 break;
             }
             case ActionType::MoveToDuplicatesFolder: {
-                std::wstring parent_dir = MoveAction::get_duplicates_folder(PathUtils::get_parent_dir(item.file.path));
+                std::wstring parent_dir = MergeAction::get_duplicates_folder(item.file);
                 CreateDirectoryW(parent_dir.c_str(), nullptr);
                 std::wstring full_name = PathUtils::get_name_without_ext(item.file.path) + L"." + PathUtils::get_extension(item.file.path);
                 if (MoveFileExW(PathUtils::to_long_path(item.file.path).c_str(),
@@ -76,15 +76,6 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
                     entry.old_value = PathUtils::wide_to_utf8(PathUtils::to_long_path(item.file.path));
                     entry.new_value = "(deleted)";
                     entry.backup_path = item.file.path;
-                }
-                break;
-            }
-            case ActionType::CreateSymlink: {
-                std::wstring link_name = PathUtils::get_parent_dir(item.file.path) + L"\\_" + PathUtils::get_name_without_ext(item.file.path) + L".link";
-                if (CreateSymbolicLinkW(PathUtils::to_long_path(link_name).c_str(),
-                                       PathUtils::to_long_path(item.file.path).c_str(), FILE_ATTRIBUTE_NORMAL)) {
-                    entry.old_value.clear();
-                    entry.new_value = PathUtils::wide_to_utf8(link_name);
                 }
                 break;
             }
@@ -118,9 +109,6 @@ void OrganizationSvc::undo_actions() {
                     CloseHandle(h);
                 }
             }
-            break;
-        case ActionType::CreateSymlink:
-            DeleteFileW(PathUtils::utf8_to_wide(entry.new_value).c_str());
             break;
     }
 }

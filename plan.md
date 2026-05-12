@@ -32,23 +32,18 @@ DupeCheck is a C++20 Windows application that finds duplicate files across folde
 │         │                       │             │
 │  ┌──────▼──────────────────────▼────────────┐ │
 │  │          Core Library                     │ │
-│  │  ┌────────────┐ ┌────────────────────┐    │ │
-│  │  │ FileScanner│ │ CachedScannerService│   │ │
-│  │  │ (wraps     │ │ (SQLite cache)      │    │ │
-│  │  │  via       │ └────────────────────┘    │ │
-│  │  │  member)   │                           │ │
-│  │  └────────────┘                            │ │
 │  │                                           │ │
-│  │  ┌────┬─────────────────┐                 │ │
-│  │  │ HashEngine  │ DuplicateEngine            │ │
-│  │  │ (SHA256,    │ (strategies, matching)     │ │
-│  │  │  XxHash32)  │                              │ │
-│  │  └────────────┘                            │ │
+│  │  ┌────────────┬─────────────────┐         │ │
+│  │  │ HashEngine  │ DuplicateEngine        │   │ │
+│  │  │ (SHA256,    │ (strategies, matching) │   │ │
+│  │  │  XxHash32)  │                        │   │ │
+│  │  └────────────┴─────────────────┘         │ │
 │  │                                           │ │
 │  │  ┌──────────────────────────────────┐     │ │
 │  │  │   OrganizationSvc                │      │ │
 │  │  │ (rename/move/delete/symlink)    │      │ │
 │  │  └──────────────────────────────────┘       │ │
+│  │                                           │ │
 │  └─────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────┘
 
@@ -109,7 +104,7 @@ CREATE TABLE IF NOT EXISTS scan_sessions (id INTEGER PRIMARY KEY, path_hash BIGI
 
 CREATE TABLE IF NOT EXISTS action_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INT REFERENCES scan_sessions(id),
-    file_path TEXT NOT NULL, action_type TEXT NOT NULL, old_value TEXT, new_value TEXT,
+    file_path TEXT NOT NULL, action_type TEXT, old_value TEXT, new_value TEXT,
     performed_at BIGINT DEFAULT (strftime('%s', 'now'))
 );
 
@@ -120,13 +115,11 @@ CREATE INDEX IF NOT EXISTS idx_action_session ON action_history(session_id);
 
 ## Configuration (`%APPDATA%\DupeCheck\settings.json`)
 
-```json
-{
-    "name_similarity_threshold": 3,
-    "hash_tolerance": 1024,
-    "max_concurrent_hashers": 7
-}
-```
+| Setting              | Default | Description                                          |
+|----------------------|---------|------------------------------------------------------|
+| Name Similarity Threshold | 3   | Levenshtein distance for name-variant detection      |
+| Hash Tolerance       | 1024    | XxHash32 bin size (bytes) for similarity grouping    |
+| Max Concurrent Hashers | Auto  | Number of parallel hash workers (= CPU cores - 1)   |
 
 ---
 
@@ -142,11 +135,11 @@ CREATE INDEX IF NOT EXISTS idx_action_session ON action_history(session_id);
 
 ```
 dupecheck/
-├── CMakeLists.txt            # Top-level build configuration
+├── CMakeLists.txt            # Top-level build configuration (explicit source lists)
 │
 ├── external/                 # External dependencies (bundled, unzip before build)
-│   ├── imgui/               # Dear ImGui source + Win32 backend
-│   └── sqlite3/             # SQLite amalgamation
+│   ├── imgui/               # Dear ImGui source + Win32 backend (~35 files)
+│   └── sqlite3/             # SQLite amalgamation (sqlite3.c, .h, ext.h)
 │
 ├── src/
 │   ├── main.cpp              # Entry point: CLI args → GUI or service mode
@@ -162,10 +155,7 @@ dupecheck/
 │   │   └── xxhash_wrapper.h  # Thin C++ wrapper around compute_xxhash32()
 │   │
 │   ├── scanner/              # File enumeration & caching
-│   │   ├── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
-│   │   ├── CachedDatabase.h          # Deprecated alias (extends DatabaseManager)
-│   │   ├── FileScanner.{h,cpp}       # Composition-based wrapper over CachedScannerService
-│   │   └── DatabaseManager.{h,cpp}   # SQLite persistence layer
+│   │   └── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
 │   │
 │   ├── engine/               # Duplicate detection strategies (inline headers)
 │   │   ├── DuplicateEngine.{h,cpp}  # Strategy dispatching & result merging
@@ -177,28 +167,25 @@ dupecheck/
 │   │
 │   ├── organization/         # Batch actions on duplicate groups
 │   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration + undo history
-│   │   ├── RenameAction.h            Lightweight rename helper (kept for compatibility)
-│   │   ├── MoveAction.h              Lightweight move helper
-│   │   ├── DeleteAction.h            Lightweight delete helper
-│   │   └── SymlinkAction.h           Lightweight symlink creation/undo
+│   │   ├── MergeAction.h           Move, Archive, Delete, Symlink helpers (all in one)
+│   │   └── RenameAction.h          Lightweight rename helper
 │   │
 │   ├── service/              # Windows Service + CLI
 │   │   ├── ServiceHost.{h,cpp}    Service registration & lifecycle
 │   │   └── NamedPipeServer.{h,cpp> GUI-service IPC (named pipe)
 │   │
 │   ├── gui/                  # ImGui-based user interface (Win32 backend)
-│   │   ├── Controls.cpp        Path input, scan/browse buttons
-│   │   ├── PreviewPanel.{h,cpp}  Action preview widget per group
-│   │   ├── SettingsDialog.{h,cpp>  Modal settings dialog
-│   │   └── ImGuiView.{h,cpp}       Main window + event loop (run_gui)
+│   │   ├── Controls.cpp/h        Path input, scan/browse buttons + status indicators
+│   │   ├── PreviewPanel.{h,cpp>  Action preview widget per group
+│   │   ├── SettingsDialog.{h,cpp> Modal settings dialog
+│   │   └── ImGuiView.{h,cpp>     Main window + event loop (run_gui)
 │   │
 │   └── utils/                # Shared utilities
-│       ├── JsonConfig.{h,cpp>  Lightweight JSON config reader/writer
+│       ├── JsonConfig.{h,cpp}  Lightweight JSON config reader/writer
 │       ├── Levenshtein.h      Templated edit-distance algorithm
 │       └── ExtensionFamilyMap.h Built-in extension family mappings
 │
-├── resources/              # Application resources
-│   └── appicon.ico         Windows icon resource
+├── resources/              # Application resources (appicon.ico, dupecheck.rc)
 
 ## Key Design Decisions
 
@@ -206,6 +193,7 @@ dupecheck/
 2. **CachedScannerService** is the primary scanner with incremental updates based on file size + mtime comparison against the SQLite database.
 3. **WAL mode**: All SQLite databases use Write-Ahead Logging for concurrent read/write access across GUI and service processes.
 4. **No ThreadPool dependency**: Batch hashing uses `std::async` directly (per-file async), with one thread per file rather than a bounded pool.
+5. **Header-only engines**: Each detection strategy is defined in its own header as an inline function — no separate .cpp files needed, reducing compilation overhead and keeping the code self-contained.
 
 ## License
 

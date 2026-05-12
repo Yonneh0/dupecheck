@@ -27,12 +27,14 @@ int main() {
             }
             break;
         }
-        case CliCommand::RunService: {
+        case CliCommand::RunService:
             ServiceHost::run_service(args.scan_path.empty() ? L"C:\\" : args.scan_path, SCAN_INTERVAL_SECONDS);
             break;
+
+        default: {
+            // GUI mode.
+            return run_gui(GetModuleHandle(nullptr), SW_SHOWDEFAULT, args.scan_path.c_str());
         }
-        default:
-            return run_gui(GetModuleHandle(nullptr), SW_SHOWDEFAULT, args.scan_path.empty() ? L"" : args.scan_path.c_str());
     }
 
     HashEngine::cleanup();

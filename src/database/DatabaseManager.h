@@ -4,22 +4,31 @@
 #include <sqlite3.h>
 #include "../core/FileInfo.h"
 
-// SQLite-backed persistence layer for file metadata, scan sessions, and action history.
+/// SQLite-backed persistence layer for file metadata, scan sessions, and action history.
 class DatabaseManager {
 public:
     explicit DatabaseManager(const std::wstring& db_path);
     ~DatabaseManager();
+
+    /// Initialize the database (create tables if they don't exist).
     bool init();
-    // Insert or update a file's cached metadata. Returns true if the file was stored (updated or newly inserted).
+
+    /// Insert or update a file's cached metadata. Returns true if stored.
     bool upsert_file(const FileInfo& info, long long last_scan_seconds);
-    // Retrieve all cached files.
+
+    /// Retrieve all cached files sorted by size descending.
     std::vector<FileInfo> get_cached_files() const;
-    // Remove entries for files that no longer exist on disk.
+
+    /// Remove entries for files that no longer exist on disk.
     bool remove_deleted_files(const std::vector<std::wstring>& current_paths);
-    // Persist a scan session record.
+
+    /// Persist a scan session record.
     bool save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags);
+
+    /// Get the ID of the last inserted session (0 if none).
     int get_last_session_id() const;
-    // Log an action taken on a file during the given session.
+
+    /// Log an action taken on a file during the given session.
     bool record_action(int session_id, const std::wstring& file_path,
                        const std::string& action_type,
                        const std::string& old_value,

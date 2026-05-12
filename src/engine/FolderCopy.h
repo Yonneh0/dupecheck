@@ -1,12 +1,10 @@
 #pragma once
-
 #include <vector>
 #include <unordered_map>
 #include "../core/FileInfo.h"
-#include "DuplicateEngine.h"
 #include "../hashing/HashEngine.h"
 
-// Compute a tree hash for the given directory by hashing all file entries.
+/// Compute a tree hash for a directory by hashing all file entries.
 static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     HashEngine::init_bcrypt();
 
@@ -27,12 +25,10 @@ static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     std::vector<Entry> file_entries;
     file_entries.reserve(entries.size());
     for (const auto& entry : entries) {
-        // Compute the path relative to dir_path.
         const wchar_t* prefix = dir_path.c_str();
         if (_wcsnicmp(entry.path.c_str(), prefix, dir_path.length()) == 0) {
             file_entries.push_back({entry.path.substr(dir_path.length()), entry.size});
         } else {
-            // Fall back to just the filename.
             std::filesystem::path fp(entry.path);
             file_entries.push_back({fp.stem().wstring(), entry.size});
         }
@@ -59,6 +55,7 @@ static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     }
 }
 
+/// Group directories with identical tree hashes (likely copies of each other).
 inline std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& dirs) {
     std::unordered_map<Sha256, std::vector<std::wstring>> hash_to_dirs;
     for (const auto& d : dirs) {
@@ -68,7 +65,7 @@ inline std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& 
     }
 
     std::vector<DuplicateGroup> groups;
-    for (const auto& [hash, path_list] : hash_to_dirs) {
+    for (auto& [hash, path_list] : hash_to_dirs) {
         if (path_list.size() < 2) continue;
         DuplicateGroup dg;
         for (const auto& p : path_list) {

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-// Compute the Levenshtein edit distance between two strings (templated for wchar_t/std::string).
+/// Compute Levenshtein edit distance between two strings (works with both std::string and std::wstring).
 template<typename StringT>
 inline int levenshtein_distance(const StringT& a, const StringT& b) {
     size_t n = a.length(), m = b.length();

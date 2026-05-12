@@ -11,9 +11,9 @@ enum class Strategy : uint32_t {
 };
 
 struct StrategyConfig {
-    int name_similarity_threshold = 3;
-    uint32_t hash_tolerance = 1024;
-    bool service_enabled = true;
+    int name_similarity_threshold = 3;   // Levenshtein distance for name-variant detection.
+    uint32_t hash_tolerance = 1024;      // XxHash32 bin size (bytes) for similarity grouping.
+    bool service_enabled = true;         // Whether the Windows service should run.
 };
 
 inline const char* strategy_to_string(Strategy s) {

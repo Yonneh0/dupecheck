@@ -2,7 +2,7 @@
 #include <string>
 #include "../core/FileInfo.h"
 
-// Lightweight rename helper (kept for compatibility).
+/// Generate a renamed path for a duplicate file (e.g., "file (copy 1).txt").
 class RenameAction {
 public:
     static std::wstring generate_name(const FileInfo& original, int index) {

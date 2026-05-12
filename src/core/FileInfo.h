@@ -16,7 +16,7 @@ struct HashResult {
     Sha256 sha256{};
 };
 
-// File metadata used throughout the application.
+/// File metadata used throughout the application.
 struct FileInfo {
     std::wstring path;
     uint64_t size = 0;
@@ -47,6 +47,7 @@ inline std::string wide_to_utf8(const std::wstring& w) {
     return result;
 }
 
+/// Convert to Windows long path format (\\?\ prefix) for paths >260 chars.
 inline std::wstring to_long_path(const std::wstring& p) {
     if (p.length() > 260 && p.substr(0, 4) != L"\\\\?\\") {
         return L"\\\\?\\" + p;
@@ -57,25 +58,22 @@ inline std::wstring to_long_path(const std::wstring& p) {
 inline std::string get_extension(const std::wstring& path) {
     std::filesystem::path fp(path);
     auto ext = fp.extension().string();
-    if (!ext.empty() && ext[0] == '.') {
-        ext.erase(ext.begin());
-    }
+    if (!ext.empty() && ext[0] == '.') ext.erase(ext.begin());
     for (auto& c : ext) c = static_cast<char>(std::tolower(c));
     return ext;
 }
 
 inline std::wstring get_name_without_ext(const std::wstring& path) {
-    std::filesystem::path fp(path);
-    return fp.stem().string();
+    return std::filesystem::path(path).stem().string();
 }
 
 inline std::wstring get_parent_dir(const std::wstring& path) {
-    std::filesystem::path fp(path);
-    auto p = fp.parent_path();
+    auto p = std::filesystem::path(path).parent_path();
     if (p.empty()) return L"";
     return p.wstring();
 }
 
+/// Check whether the given path refers to a file.
 inline bool is_file(const std::wstring& path) {
     DWORD attrs = GetFileAttributesW(to_long_path(path).c_str());
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0);
@@ -83,8 +81,7 @@ inline bool is_file(const std::wstring& path) {
 
 inline uint64_t get_file_size(const std::wstring& path) {
     WIN32_FILE_ATTRIBUTE_DATA info;
-    if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info))
-        return 0;
+    if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info)) return 0;
     ULARGE_INTEGER size;
     size.QuadPart = static_cast<uint64_t>(info.nFileSizeHigh) << 32 | info.nFileSizeLow;
     return size.QuadPart;
@@ -92,28 +89,25 @@ inline uint64_t get_file_size(const std::wstring& path) {
 
 inline long long get_file_mtime(const std::wstring& path) {
     WIN32_FILE_ATTRIBUTE_DATA info;
-    if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info))
-        return 0;
+    if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info)) return 0;
     ULARGE_INTEGER ft;
     ft.LowPart = info.ftLastWriteTime.dwLowDateTime;
     ft.HighPart = info.ftLastWriteTime.dwHighDateTime;
     return static_cast<long long>(ft.QuadPart / 10000000) - EPOCH_OFFSET;
 }
 
+/// Recursively enumerate all files under `dir`, appending them to `out`.
 inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out) {
     if (dir.empty()) return;
 
     auto long_dir = to_long_path(dir);
     bool is_root_drive = (long_dir.length() <= 4 && long_dir.back() == L':');
-    // Use long_dir for root drives too so the \\?\ prefix is preserved.
     std::wstring search_pattern = (is_root_drive) ? long_dir + L"\\*.*" : long_dir + L"\\";
 
     WIN32_FIND_DATAW find_data;
     HANDLE hFind = FindFirstFileExW(search_pattern.c_str(),
-                                   FindExInfoStandard,
-                                   &find_data,
-                                   FindExSearchNameMatch,
-                                   nullptr, 0);
+                                   FindExInfoStandard, &find_data,
+                                   FindExSearchNameMatch, nullptr, 0);
     if (hFind == INVALID_HANDLE_VALUE) return;
 
     do {
@@ -121,7 +115,6 @@ inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out)
             wcscmp(find_data.cFileName, L"..") == 0) continue;
 
         std::wstring full_path = long_dir + L"\\" + find_data.cFileName;
-
         if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             enumerate_files(full_path, out);
         } else {

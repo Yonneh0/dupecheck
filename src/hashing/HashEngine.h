@@ -2,43 +2,47 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <vector>
-#include <string>
-#include <future>
 #include "../core/FileInfo.h"
 
-// Global Bcrypt state — initialized via std::call_once on first use.
+// Global Bcrypt state — initialized on first use via std::call_once.
 extern HMODULE g_bcrypt_handle;
 extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
-extern bool s_initialized;
 extern std::once_flag s_init_flag;
 
 class HashEngine {
 public:
     static void init_bcrypt();
     static void cleanup();
+    // SHA256 algorithm handle — valid after init_bcrypt().
     static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
-    // Single-pass SHA256+XxHash32 computation on the given file path.
+    // Compute XxHash32 and SHA256 for a single file in one pass.
     static HashResult compute(const wchar_t* path);
     // Multi-threaded batch hash (one std::async per file).
     static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
+
+private:
+    inline static bool s_initialized_ = false;
 };
 
+// Initialize BCrypt SHA256 algorithm handle. Called once before any hashing.
 inline void HashEngine::init_bcrypt() {
+    if (s_initialized_) return;
     std::call_once(s_init_flag, []() {
         NTSTATUS status = BCryptOpenAlgorithmProvider(&g_bcrypt_alg_, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
-        s_initialized = (status == ERROR_SUCCESS);
+        s_initialized_ = (status == ERROR_SUCCESS);
     });
 }
 
+// Close the BCrypt algorithm handle. Call at shutdown.
 inline void HashEngine::cleanup() {
     if (g_bcrypt_alg_) {
         BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
         g_bcrypt_alg_ = nullptr;
     }
-    s_initialized = false;
+    s_initialized_ = false;
 }
 
-// Inline implementation of compute — defined in HashEngine.cpp for simplicity.
+// Single-pass SHA256+XxHash32 computation on the given file path.
 inline HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
     HANDLE hFile = CreateFileW(
@@ -76,3 +80,5 @@ inline HashResult HashEngine::compute(const wchar_t* path) {
     CloseHandle(hFile);
     return result;
 }
+
+#endif // HashEngine_H

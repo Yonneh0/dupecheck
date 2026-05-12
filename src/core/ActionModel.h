@@ -1,5 +1,4 @@
 #pragma once
-
 #include <vector>
 #include <string>
 #include "FileInfo.h"
@@ -7,6 +6,7 @@
 
 enum class FileType { Original, Duplicate };
 
+/// Actions supported by the organization service.
 enum class ActionType { Rename, MoveToDuplicatesFolder, Delete, CreateSymlink, Archive };
 
 struct ActionItem {

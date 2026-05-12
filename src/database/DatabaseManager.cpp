@@ -5,20 +5,22 @@ static const char* SCHEMA = R"(
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL COLLATE NOCASE,
     size BIGINT NOT NULL, mtime BIGINT NOT NULL, xxhash32 BIGINT NOT NULL,
-    sha256 BLOB(32) NOT NULL, last_scan INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    sha256 BLOB(32) NOT NULL, last_scan INTEGER DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
 CREATE INDEX IF NOT EXISTS idx_files_xxhash ON files(xxhash32);
+
 CREATE TABLE IF NOT EXISTS scan_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, path_hash BIGINT NOT NULL DEFAULT 0,
-    scan_path TEXT NOT NULL, created_at BIGINT NOT NULL DEFAULT (strftime('%s', 'now')),
-    file_count INTEGER NOT NULL, duplicate_count INTEGER NOT NULL, strategy_flags INTEGER NOT NULL
+    id INTEGER PRIMARY KEY AUTOINCREMENT, path_hash BIGINT DEFAULT 0,
+    scan_path TEXT NOT NULL, created_at BIGINT DEFAULT (strftime('%s', 'now')),
+    file_count INT, duplicate_count INT, strategy_flags INT
 );
+
 CREATE TABLE IF NOT EXISTS action_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER REFERENCES scan_sessions(id),
-    file_path TEXT NOT NULL, action_type TEXT NOT NULL, old_value TEXT, new_value TEXT,
-    performed_at BIGINT NOT NULL DEFAULT (strftime('%s', 'now'))
+    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INT REFERENCES scan_sessions(id),
+    file_path TEXT NOT NULL, action_type TEXT, old_value TEXT, new_value TEXT,
+    performed_at BIGINT DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_action_session ON action_history(session_id);
 )";
@@ -30,8 +32,8 @@ bool DatabaseManager::init() {
     int rc = sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
     if (rc != SQLITE_OK) return false;
     const char* wal_sql = "PRAGMA journal_mode=WAL;";
-    rc = sqlite3_exec(db_, wal_sql, nullptr, nullptr, nullptr);
-    return rc == SQLITE_OK && sqlite3_exec(db_, SCHEMA, nullptr, nullptr, nullptr) == SQLITE_OK;
+    return rc == SQLITE_OK && sqlite3_exec(db_, wal_sql, nullptr, nullptr, nullptr) == SQLITE_OK
+        && sqlite3_exec(db_, SCHEMA, nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seconds) {
@@ -47,7 +49,8 @@ bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seco
     sqlite3_bind_int64(stmt, 4, last_scan_seconds);
     sqlite3_bind_text(stmt, 5, utf_path.c_str(), static_cast<int>(utf_path.size()), SQLITE_TRANSIENT);
 
-    rc = sqlite3_step(stmt); int changes = sqlite3_changes(db_); sqlite3_finalize(stmt);
+    int changes = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(db_) : 0;
+    sqlite3_finalize(stmt);
     if (changes > 0) return true;
 
     const char* ins_sql = "INSERT OR IGNORE INTO files (path, size, mtime, xxhash32, sha256, last_scan) VALUES (?, ?, ?, ?, ?, ?)";
@@ -61,7 +64,8 @@ bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seco
     sqlite3_bind_blob(stmt, 5, sha_blob.data(), static_cast<int>(sha_blob.size()), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, last_scan_seconds);
 
-    rc = sqlite3_step(stmt); int ins_changes = sqlite3_changes(db_); sqlite3_finalize(stmt);
+    int ins_changes = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(db_) : 0;
+    sqlite3_finalize(stmt);
     return ins_changes > 0;
 }
 
@@ -72,7 +76,7 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
     if (rc != SQLITE_OK) return results;
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        FileInfo fi;
+        FileInfo fi{};
         const unsigned char* path_raw = sqlite3_column_text(stmt, 0);
         if (path_raw) fi.path = PathUtils::utf8_to_wide(reinterpret_cast<const char*>(path_raw));
         fi.size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 1));
@@ -83,14 +87,12 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
         if (sha_raw && sha_len == 32) std::copy(sha_raw, sha_raw + 32, fi.sha256.begin());
         results.push_back(std::move(fi));
     }
-    sqlite3_finalize(stmt); return results;
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& current_paths) {
-    if (current_paths.empty()) {
-        sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr);
-        return true;
-    }
+    if (current_paths.empty()) return (sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr) == SQLITE_OK);
 
     std::string where = "WHERE path NOT IN (";
     bool first = true;
@@ -98,17 +100,12 @@ bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& curr
         std::string utf8_path = PathUtils::wide_to_utf8(p);
         std::string escaped;
         escaped.reserve(utf8_path.size() * 2 + 1);
-        for (char c : utf8_path) {
-            if (c == '\'') escaped += "''";
-            else escaped += c;
-        }
+        for (char c : utf8_path) escaped += (c == '\'') ? "''" : c;
         where += first ? "'" + escaped + "'" : ", '" + escaped + "'";
         first = false;
     }
     where += ")";
-
-    std::string sql = "DELETE FROM files " + where;
-    return sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
+    return sqlite3_exec(db_, ("DELETE FROM files " + where).c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 bool DatabaseManager::save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags) {
@@ -132,7 +129,8 @@ int DatabaseManager::get_last_session_id() const {
     if (rc != SQLITE_OK) return 0;
     int result = 0;
     if (sqlite3_step(stmt) == SQLITE_ROW) result = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt); return result;
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 bool DatabaseManager::record_action(int session_id, const std::wstring& file_path,
