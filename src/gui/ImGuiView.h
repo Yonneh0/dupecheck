@@ -27,9 +27,6 @@ private:
     inline static DatabaseManager* s_db_ = nullptr;
     inline static StrategyConfig config_{3, 1024};
     inline static std::vector<DuplicateGroup> results_;
-
-    // Internal scan implementation that also sets progress.
-    static void run_scan_impl(const wchar_t* path);
 };
 
 /// Entry point for the GUI — called when no CLI service mode is active.

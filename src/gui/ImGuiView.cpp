@@ -9,7 +9,7 @@
 #include "Controls.h"
 
 // Perform a full scan with the given path and update results + session.
-static void perform_scan_impl(const wchar_t* path) {
+static void perform_scan_impl(const wchar_t* path, DatabaseManager* db) {
     if (!path || path[0] == L'\0') return;
 
     CachedScannerService scanner(path);
@@ -24,16 +24,16 @@ static void perform_scan_impl(const wchar_t* path) {
         for (wchar_t c : path) {
             path_hash += static_cast<int64_t>(c);
         }
-        if (ImGuiView::s_db_) {
-            ImGuiView::s_db_->save_session(path_hash, static_cast<int>(cached_files.size()),
-                                           static_cast<int>(result_groups.size()), ALL_STRATEGIES);
+        if (db) {
+            db->save_session(path_hash, static_cast<int>(cached_files.size()),
+                             static_cast<int>(result_groups.size()), ALL_STRATEGIES);
         }
     }
 }
 
 inline constexpr uint32_t ALL_STRATEGIES = 0x1F;   // All five strategy bits set
 
-void ImGuiView::perform_scan(const wchar_t* path) { perform_scan_impl(path); }
+void ImGuiView::perform_scan(const wchar_t* path) { perform_scan_impl(path, s_db_); }
 
 std::vector<DuplicateGroup> ImGuiView::get_results() { return results_; }
 

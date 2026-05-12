@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <unordered_set>
 #include "../core/FileInfo.h"
 #include "../core/Strategy.h"
 #include "../core/ActionModel.h"
@@ -14,6 +15,9 @@ struct DuplicateGroup {
     Strategy strategy = Strategy::ExactMatch;
     std::string label;
 };
+
+/// Deduplicate groups by removing files that already appear in a higher-priority group.
+std::vector<DuplicateGroup> deduplicate_groups(std::vector<DuplicateGroup>&& groups);
 
 class DuplicateEngine {
 public:

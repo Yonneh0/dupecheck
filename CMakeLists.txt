@@ -27,13 +27,12 @@ file(GLOB IMGUI_SOURCES
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PUBLIC ${CMAKE_SOURCE_DIR}/external/imgui)
 
-# Core sources — explicitly listed to avoid duplicate symbols when linked.
+# Core sources — explicitly listed to avoid duplicate symbols.
 set(CORE_SOURCES
     src/database/DatabaseManager.cpp
     src/engine/DuplicateEngine.cpp
     src/hashing/HashEngine.cpp
     src/scanner/CachedScannerService.cpp
-    src/service/NamedPipeServer.cpp
 )
 
 add_library(dupecheck_core STATIC ${CORE_SOURCES})
@@ -48,12 +47,3 @@ add_executable(dupecheck WIN32 src/main.cpp
                                src/gui/SettingsDialog.cpp)
 target_link_libraries(dupecheck PRIVATE dupecheck_core)
 set_target_properties(dupecheck PROPERTIES OUTPUT_NAME "DupeCheck")
-
-# Windows service binary (console subsystem for CLI).
-add_executable(dupeservice CONSOLE src/service/ServiceHost.cpp)
-target_link_libraries(dupeservice PRIVATE dupecheck_core msvcrt advapi32 kernel32 user32 gdi32)
-set_target_properties(dupeservice PROPERTIES OUTPUT_NAME "DupeCheckService")
-
-if(EXISTS resources/appicon.ico)
-    configure_file(resources/appicon.ico ${CMAKE_BINARY_DIR}/appicon.ico COPYONLY)
-endif()

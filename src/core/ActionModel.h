@@ -7,7 +7,7 @@
 enum class FileType { Original, Duplicate };
 
 /// Actions supported by the organization service.
-enum class ActionType { Rename, MoveToDuplicatesFolder, Delete, CreateSymlink, Archive };
+enum class ActionType { Rename, MoveToDuplicatesFolder };  // Delete, CreateSymlink, Archive removed (unused)
 
 struct ActionItem {
     FileInfo file;

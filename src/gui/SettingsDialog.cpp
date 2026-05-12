@@ -2,7 +2,6 @@
 #include <imgui.h>
 #include "SettingsDialog.h"
 #include "../utils/JsonConfig.h"
-#include "../database/DatabaseManager.h"
 
 static StrategyConfig& get_strategy_config_impl() {
     static StrategyConfig config{3, 1024};
@@ -22,7 +21,7 @@ void render_settings_dialog() {
     uint32_t orig_tolerance = cfg.hash_tolerance;
     SYSTEM_INFO info{};
     GetSystemInfo(&info);
-    int orig_hasher_count = static_cast<int>(std::max(1, static_cast<int>(info.dwNumberOfProcessors) - 1));
+    int max_processors = static_cast<int>(std::max(1u, info.dwNumberOfProcessors - 1));
 
     // Load current settings from disk so the dialog is pre-populated.
     const wchar_t* env = _wgetenv(L"APPDATA");
@@ -31,7 +30,7 @@ void render_settings_dialog() {
 
     int threshold = cfg.name_similarity_threshold;
     uint32_t tolerance = cfg.hash_tolerance;
-    int hasher_count = orig_hasher_count;
+    int hasher_count = max_processors;
 
     // Restore from disk if present.
     auto load_val = [&](const char* key, int& out) {
@@ -48,24 +47,33 @@ void render_settings_dialog() {
         ImGui::Text("Settings");
         ImGui::Separator();
         ImGui::SetNextItemWidth(280);
-        ImGui::SliderInt("Name Similarity Threshold", &threshold, 0, 10);
+        ImGui::SliderInt("Name Similarity Threshold (0-10)", &threshold, 0, 10);
         ImGui::SetNextItemWidth(280);
         ImGui::SliderInt("Hash Tolerance (bytes)", static_cast<int*>(&tolerance), 256, 4096);
         ImGui::SetNextItemWidth(280);
-        ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, std::max(1, info.dwNumberOfProcessors - 1));
+        ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, max_processors);
 
         if (ImGui::Button("Save Settings")) {
-            cfg.name_similarity_threshold = threshold;
-            cfg.hash_tolerance = tolerance;
+            // Validate: threshold must be non-negative, tolerance at least 256.
+            if (threshold < 0 || threshold > 10) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "Threshold must be between 0 and 10");
+            } else if (tolerance < 256 || tolerance > 4096) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "Tolerance must be between 256 and 4096");
+            } else if (hasher_count < 1 || hasher_count > max_processors) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "Hashers must be between 1 and %d", max_processors);
+            } else {
+                cfg.name_similarity_threshold = threshold;
+                cfg.hash_tolerance = tolerance;
 
-            std::unordered_map<std::string, std::string> config_data = {
-                {"name_similarity_threshold", std::to_string(threshold)},
-                {"hash_tolerance", std::to_string(tolerance)},
-                {"max_concurrent_hashers", std::to_string(hasher_count)}
-            };
+                std::unordered_map<std::string, std::string> config_data = {
+                    {"name_similarity_threshold", std::to_string(threshold)},
+                    {"hash_tolerance", std::to_string(tolerance)},
+                    {"max_concurrent_hashers", std::to_string(hasher_count)}
+                };
 
-            JsonConfig::save(path, config_data);
-            ImGui::CloseCurrentPopup();
+                JsonConfig::save(path, config_data);
+                ImGui::CloseCurrentPopup();
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) {

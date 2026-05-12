@@ -15,6 +15,7 @@ public:
 private:
     inline static SERVICE_STATUS_HANDLE h_service_status_ = nullptr;
     inline static bool is_running_ = false;
+    inline static std::wstring current_scan_path_;
 };
 
 /// Parse command-line arguments (returns CLI mode or GUI with optional scan path).

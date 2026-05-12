@@ -8,7 +8,17 @@ static void service_do_scan(const std::wstring& scan_path) {
     PathUtils::enumerate_files(scan_path, entries);
 }
 
+SERVICE_STATUS get_status(bool running) {
+    SERVICE_STATUS ss{};
+    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+    ss.dwCurrentState = running ? SERVICE_RUNNING : SERVICE_STOPPED;
+    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    return ss;
+}
+
 void ServiceHost::run_service(const std::wstring& scan_path, int interval_seconds) {
+    current_scan_path_ = scan_path;
+
     h_service_status_ = RegisterServiceCtrlHandlerW(SERVICE_NAME, [](DWORD control) {
         switch (control) {
             case SERVICE_CONTROL_STOP:
@@ -37,19 +47,11 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
 
     while (is_running_) {
         Sleep(static_cast<DWORD>(interval_seconds) * 1000);
-        if (is_running_) service_do_scan(scan_path);
+        if (is_running_ && !current_scan_path_.empty()) service_do_scan(current_scan_path_);
     }
 
     ss.dwCurrentState = SERVICE_STOPPED;
     SetServiceStatus(h_service_status_, &ss);
-}
-
-static SERVICE_STATUS get_status(bool running) {
-    SERVICE_STATUS ss{};
-    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    ss.dwCurrentState = running ? SERVICE_RUNNING : SERVICE_STOPPED;
-    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
-    return ss;
 }
 
 ServiceArgs parse_args(int argc, char** argv) {

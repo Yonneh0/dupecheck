@@ -4,20 +4,27 @@
 #include <vector>
 #include "../core/FileInfo.h"
 
-// Global Bcrypt state — initialized on first use via std::call_once.
+// Global BCrypt state — initialized on first use via std::call_once.
 extern HMODULE g_bcrypt_handle;
 extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
 extern std::once_flag s_init_flag;
 
+/// Computes XxHash32 and SHA256 for files using single-pass I/O.
 class HashEngine {
 public:
+    /// Initialize the BCrypt SHA256 algorithm handle (thread-safe, called once).
     static void init_bcrypt();
+
+    /// Close the BCrypt algorithm handle. Call at shutdown.
     static void cleanup();
-    // SHA256 algorithm handle — valid after init_bcrypt().
+
+    /// Get the SHA256 algorithm handle — valid after init_bcrypt().
     static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
-    // Compute XxHash32 and SHA256 for a single file in one pass.
+
+    /// Compute XxHash32 and SHA256 for a single file in one I/O pass.
     static HashResult compute(const wchar_t* path);
-    // Multi-threaded batch hash (one std::async per file).
+
+    /// Batch hash files using deferred async tasks (one per file).
     static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
 
 private:

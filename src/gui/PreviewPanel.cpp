@@ -4,25 +4,6 @@
 #include "../organization/OrganizationSvc.h"
 #include "../core/Strategy.h"
 
-/// Confirmation dialog helper for destructive actions. Currently unused — reserved for future per-action confirmation UI.
-[[maybe_unused]] static bool show_confirmation(const char* title, const char* message) {
-    ImGui::OpenPopup(title);
-    const ImVec2 popup_size(360, 180);
-    ImGui::SetNextWindowSize(popup_size, ImGuiCond_Appearing);
-
-    bool confirmed = false;
-    if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoResize)) {
-        ImGui::TextWrapped("%s", message);
-        ImGui::Separator();
-        ImVec2 button_size(100, 30);
-        if (ImGui::Button("Confirm", button_size)) { confirmed = true; ImGui::CloseCurrentPopup(); }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", button_size)) { ImGui::CloseCurrentPopup(); }
-        ImGui::EndPopup();
-    }
-    return confirmed;
-}
-
 void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     if (groups.empty()) {
         ImGui::TextDisabled("No duplicates found — try scanning a different folder.");
@@ -34,29 +15,43 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     }
 
     for (const auto& group : groups) {
-        const char* sn = strategy_to_string(group.strategy);
+        // Color-code strategy type.
+        ImVec4 strategy_color{};
+        switch (group.strategy) {
+            case Strategy::ExactMatch:      strategy_color = ImVec4(0.6f, 1.0f, 0.6f, 1.0f); break;
+            case Strategy::NameVariant:     strategy_color = ImVec4(0.7f, 0.85f, 1.0f, 1.0f); break;
+            case Strategy::SizeHashSimilar: strategy_color = ImVec4(1.0f, 0.85f, 0.6f, 1.0f); break;
+            case Strategy::ExtensionFamily: strategy_color = ImVec4(0.9f, 0.7f, 1.0f, 1.0f); break;
+            case Strategy::FolderCopy:      strategy_color = ImVec4(1.0f, 1.0f, 0.6f, 1.0f); break;
+        }
 
-        // Use the address as tree node ID to avoid collisions.
-        if (ImGui::TreeNodeEx(&group, "%s (%zu files)", sn, static_cast<size_t>(group.files.size()))) {
+        if (ImGui::TreeNodeEx(&group, "%s (%zu files)", group.label.c_str(), static_cast<size_t>(group.files.size()))) {
             for (size_t i = 0; i < group.files.size(); ++i) {
                 std::string path_str = PathUtils::wide_to_utf8(group.files[i].path);
+
                 if (i > 0) ImGui::Indent();
 
-                // Show the first file as "original" (green), rest as duplicates (yellow).
+                // First file is the original (green), rest are duplicates (yellow).
                 if (i == 0) {
-                    const ImVec4 green{0.6f, 1.0f, 0.6f, 1.0f};
-                    ImGui::PushStyleColor(ImGuiCol_Text, green);
+                    ImGui::PushStyleColor(ImGuiCol_Text, strategy_color);
                     ImGui::Text("O %s", path_str.c_str());
-                    ImGui::PopStyleColor();
                 } else {
-                    const ImVec4 yellow{1.0f, 0.95f, 0.6f, 1.0f};
-                    ImGui::PushStyleColor(ImGuiCol_Text, yellow);
-                    // Show the action that will be taken on this duplicate.
-                    ImGui::Text("D %s (rename)", path_str.c_str());
-                    ImGui::PopStyleColor();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.95f, 0.6f, 1.0f));
+                    ImGui::Text("D %s", path_str.c_str());
                 }
 
+                // Show file size below the path.
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                std::string size_str = (group.files[i].size >= 1024 * 1024)
+                    ? std::to_string(group.files[i].size / (1024 * 1024)) + " MB"
+                    : (group.files[i].size >= 1024)
+                        ? std::to_string(group.files[i].size / 1024) + " KB"
+                        : std::to_string(group.files[i].size) + " B";
+                ImGui::Text("   %s", size_str.c_str());
+                ImGui::PopStyleColor();
+
                 if (i > 0) ImGui::Unindent();
+                ImGui::PopStyleColor();
             }
 
             // Action buttons per group.

@@ -3,13 +3,17 @@
 #include "../core/ActionModel.h"
 #include "MergeAction.h"
 
-/// Orchestrates batch actions on duplicate file groups (rename, move, delete).
+/// Orchestrates batch actions on duplicate file groups.
+/// Supports Rename and MoveToDuplicatesFolder actions with full undo history.
 class OrganizationSvc {
 public:
+    /// Generate a renamed path with numeric suffix (e.g., "file (1).ext").
     static std::wstring generate_renamed_path(const FileInfo& file, int index);
-    /// Apply a list of actions.
+
+    /// Apply a list of actions and record history for undo.
     static void apply(std::vector<ActionItem>& items);
-    /// Undo the last action.
+
+    /// Undo the most recent action from history.
     static void undo_actions();
 
     // Exposed for UI access (Undo All button).
