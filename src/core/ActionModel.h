@@ -5,10 +5,8 @@
 #include "FileInfo.h"
 #include "Strategy.h"
 
-// File type for action items.
 enum class FileType { Original, Duplicate };
 
-// Actions that can be applied to duplicate files.
 enum class ActionType { Rename, MoveToDuplicatesFolder, Delete, CreateSymlink, Archive };
 
 struct ActionItem {
@@ -20,7 +18,6 @@ struct ActionItem {
     int copy_index = 0;
 };
 
-// History entry for undo support.
 struct ActionHistoryEntry {
     std::wstring file_path;
     ActionType action_type = ActionType::Rename;

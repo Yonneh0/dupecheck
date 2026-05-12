@@ -8,14 +8,14 @@ A fast duplicate file finder for Windows built with C++20. Scans folders and dri
   - **Exact Match** — identical SHA256 hash (exact content copy)
   - **Name Variants** — same content but different names within Levenshtein distance threshold
   - **Size+Hash Similar** — similar size + XxHash32 in the same bin, indicating likely modified copies
-  - **Extension Family** — same content across extension families (`jpg`/`jpeg`)
+  - **Extension Family** — same content across extension families (`jpg`/`jpeg`, `docx`/`doc`, etc.)
   - **Folder Copy** — entire directory trees copied to new locations using hierarchical tree hashing
 
 - **Cached incremental scanning** via a SQLite database at `%APPDATA%\DupeCheck\dupecheck.db`. Only re-hashes files that have changed since the last scan, based on size and modification time.
 
 - **Batch organization actions:** rename with suffixes, move to duplicate folders, delete copies, create symlinks, or archive duplicates. Full undo support via an action history stack.
 
-- **High-performance parallel hashing** — computes XxHash32 and SHA256 in a single I/O pass using `std::async` across multiple threads.
+- **Single-pass hashing** — computes XxHash32 and SHA256 in a single I/O pass using `std::async` across multiple threads (one per file).
 
 ## Building
 

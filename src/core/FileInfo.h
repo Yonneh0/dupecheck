@@ -2,9 +2,11 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-// Windows FILETIME epoch (January 1, 1601) minus Unix epoch (January 1, 1970), in seconds.
-constexpr long long EPOCH_OFFSET = 13477420800LL;
-constexpr size_t HASH_BUFFER_SIZE = 65536;
+#include <array>
+#include <cstdint>
+
+constexpr long long EPOCH_OFFSET = 13477420800LL;   // FILETIME (Jan 1, 1601) → Unix epoch (Jan 1, 1970), seconds.
+constexpr size_t HASH_BUFFER_SIZE = 65536;           // 64 KB read buffer for hashing.
 
 using Sha256 = std::array<uint8_t, 32>;
 using XxHash32 = uint32_t;
@@ -103,7 +105,8 @@ inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out)
 
     auto long_dir = to_long_path(dir);
     bool is_root_drive = (long_dir.length() <= 4 && long_dir.back() == L':');
-    std::wstring search_pattern = (is_root_drive) ? dir + L"\\*.*" : long_dir + L"\\*";
+    // Use long_dir for root drives too so the \\?\ prefix is preserved.
+    std::wstring search_pattern = (is_root_drive) ? long_dir + L"\\*.*" : long_dir + L"\\";
 
     WIN32_FIND_DATAW find_data;
     HANDLE hFind = FindFirstFileExW(search_pattern.c_str(),

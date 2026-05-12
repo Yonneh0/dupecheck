@@ -1,18 +1,9 @@
-#pragma once
-#include <cstdint>
-#include <string>
+// XXH32 implementation.
+// The actual hash function body is inlined via #define XXH_IMPLEMENTATION in xxhash.h,
+// so this file's purpose is to provide a single compilation unit for CMake linking.
 
-enum class Strategy : uint32_t { ExactMatch = 1, NameVariant = 2, SizeHashSimilar = 4, ExtensionFamily = 8, FolderCopy = 16 };
+#include "xxhash.h"
 
-struct StrategyConfig { int name_similarity_threshold = 3; uint32_t hash_tolerance = 1024; bool service_enabled = true; };
-
-inline const char* strategy_to_string(Strategy s) {
-    switch (s) {
-        case Strategy::ExactMatch:      return "Exact Match";
-        case Strategy::NameVariant:     return "Name Variant";
-        case Strategy::SizeHashSimilar: return "Size+Hash Similar";
-        case Strategy::ExtensionFamily: return "Extension Family";
-        case Strategy::FolderCopy:      return "Folder Copy";
-    }
-    return "Unknown";
+XXH32_hash_t compute_xxhash32(const uint8_t* data, size_t len, uint32_t seed) {
+    return XXH32(data, len, seed);
 }

@@ -18,6 +18,9 @@ private:
     inline static DatabaseManager* s_db_ = nullptr;
     inline static StrategyConfig config_{3, 1024};
     inline static std::vector<DuplicateGroup> results_;
+
+    // Perform a full scan with the given path and update results + session.
+    static void perform_scan(const wchar_t* path);
 };
 
 int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path);

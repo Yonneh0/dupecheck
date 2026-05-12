@@ -1,6 +1,12 @@
 #include "HashEngine.h"
 #include <future>
 
+// Define the external globals declared in HashEngine.h — single definition per TU.
+HMODULE g_bcrypt_handle = nullptr;
+BCRYPT_ALG_HANDLE g_bcrypt_alg_ = nullptr;
+bool s_initialized = false;
+std::once_flag s_init_flag{};
+
 void HashEngine::compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out) {
     init_bcrypt();
 

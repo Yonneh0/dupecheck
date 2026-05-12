@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-/* ===================== Starting Point (XXX read settings) ================== */
+/* ===================== XXH32 — Non-Cryptographic Hash ==================== */
 
 #define XXH_STATIC_LINKING_ONLY
 #define XXH_IMPLEMENTATION
@@ -47,11 +47,9 @@ XXH32_hash_t XXH32_update(XXH32_state_t* state, const void* input, size_t length
 XXH32_hash_t XXH32_digest(const XXH32_state_t* state);
 void XXH32_copyState(XXH32_state_t* dst, const XXH32_state_t* src);
 
-/* Convenience function */
+/* Convenience function — computes the hash of raw bytes. */
 uint32_t compute_xxhash32(const uint8_t* data, size_t len, uint32_t seed);
 
 #ifdef __cplusplus
 }
 #endif
-
-

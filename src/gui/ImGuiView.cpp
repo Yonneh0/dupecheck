@@ -5,6 +5,31 @@
 #include "../scanner/CachedScannerService.h"
 #include "../hashing/HashEngine.h"
 
+// Perform a full scan with the given path and update results + session.
+static void perform_scan_impl(const wchar_t* path) {
+    CachedScannerService scanner(path);
+    if (scanner.init()) {
+        auto cached_files = scanner.scan(path);
+        DuplicateEngine engine(ImGuiView::config_);
+        ImGuiView::results_ = engine.find_duplicates(cached_files, ALL_STRATEGIES);
+
+        int64_t path_hash = 0;
+        for (wchar_t c : path) {
+            path_hash += static_cast<int64_t>(c);
+        }
+        if (ImGuiView::s_db_) {
+            ImGuiView::s_db_->save_session(path_hash, static_cast<int>(cached_files.size()),
+                                           static_cast<int>(ImGuiView::results_.size()), ALL_STRATEGIES);
+        }
+    }
+}
+
+inline constexpr uint32_t ALL_STRATEGIES = 0x1F;   // All five strategy bits set
+
+void ImGuiView::perform_scan(const wchar_t* path) {
+    perform_scan_impl(path);
+}
+
 std::wstring get_default_db_path() {
     wchar_t appdata[MAX_PATH];
     DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
@@ -83,29 +108,14 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
 
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("DupeCheck")) {
-            if (ImGui::InputTextW(L"##path", path_buf, ARRAYSIZE(path_buf))) {
-                CachedScannerService scanner(path_buf);
-                if (scanner.init()) {
-                    auto cached_files = scanner.scan(path_buf);
-                    DuplicateEngine engine(config_);
-                    results_ = engine.find_duplicates(cached_files, 0x1F);
-
-                    int64_t path_hash = 0;
-                    for (wchar_t c : path_buf) {
-                        path_hash += static_cast<int64_t>(c);
-                    }
-                    db.save_session(path_hash, static_cast<int>(cached_files.size()),
-                                    static_cast<int>(results_.size()), 0x1F);
-                }
+            // Path input with auto-scan on Enter.
+            const bool path_changed = ImGui::InputTextW(L"##path", path_buf, ARRAYSIZE(path_buf));
+            if (path_changed) {
+                perform_scan_impl(path_buf);
             }
 
             if (ImGui::Button("Scan", ImVec2(100, 30))) {
-                CachedScannerService scanner(path_buf);
-                if (scanner.init()) {
-                    auto cached_files = scanner.scan(path_buf);
-                    DuplicateEngine engine(config_);
-                    results_ = engine.find_duplicates(cached_files, 0x1F);
-                }
+                perform_scan_impl(path_buf);
             }
 
             for (const auto& group : results_) {

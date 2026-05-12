@@ -3,8 +3,9 @@
 #include "../core/ActionModel.h"
 
 // Windows Service for periodic duplicate scanning.
-constexpr const wchar_t* SERVICE_NAME = L"DupeCheck";
-constexpr const wchar_t* DISPLAY_NAME = L"DupeCheck Duplicate File Scanner";
+constexpr const wchar_t* SERVICE_NAME       = L"DupeCheck";
+constexpr const wchar_t* DISPLAY_NAME       = L"DupeCheck Duplicate File Scanner";
+constexpr int SCAN_INTERVAL_SECONDS         = 300;   // 5 minutes between scans
 
 class ServiceHost {
 public:

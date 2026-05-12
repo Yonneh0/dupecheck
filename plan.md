@@ -34,19 +34,21 @@ DupeCheck is a C++20 Windows application that finds duplicate files across folde
 │  │          Core Library                     │ │
 │  │  ┌────────────┐ ┌────────────────────┐    │ │
 │  │  │ FileScanner│ │ CachedScannerService│   │ │
-│  │  │ (inherits  │ │ (SQLite cache)      │    │ │
-│  │  │  from it)  │ └────────┬───────────┘    │ │
-│  │  └────┬───────┘          │                │ │
-│  │  ┌────▼──────────────────▼──────────┐     │ │
-│  │  │   Duplicate Engine               │      │ │
-│  │  │ (strategies, matching, grouping) │      │ │
-│  │  └────┬─────────────────────┬──────┘       │ │
-│  │       │                     │              │ │
-│  │  ┌────▼────────┐    ┌──────▼───────────┐   │ │
-│  │  │ HashEngine  │    │ OrganizationSvc   │   │ │
-│  │  │ (SHA256,    │    │ (rename/move/     │   │ │
-│  │  │  XxHash32)  │    │ delete/symlink)   │   │ │
-│  │  └─────────────┘    └──────────────────┘   │ │
+│  │  │ (wraps     │ │ (SQLite cache)      │    │ │
+│  │  │  via       │ └────────────────────┘    │ │
+│  │  │  member)   │                           │ │
+│  │  └────────────┘                            │ │
+│  │                                           │ │
+│  │  ┌────┬─────────────────┐                 │ │
+│  │  │ HashEngine  │ DuplicateEngine            │ │
+│  │  │ (SHA256,    │ (strategies, matching)     │ │
+│  │  │  XxHash32)  │                              │ │
+│  │  └────────────┘                            │ │
+│  │                                           │ │
+│  │  ┌──────────────────────────────────┐     │ │
+│  │  │   OrganizationSvc                │      │ │
+│  │  │ (rename/move/delete/symlink)    │      │ │
+│  │  └──────────────────────────────────┘       │ │
 │  └─────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────┘
 
@@ -55,7 +57,7 @@ SQLite DB: %APPDATA%\DupeCheck\dupecheck.db (WAL mode)
 
 ---
 
-## Core Data Model (in `src/core/ActionModel.h`)
+## Core Data Model (`src/core/ActionModel.h`)
 
 ```cpp
 enum class FileType { Original, Duplicate };
@@ -64,15 +66,13 @@ struct ActionItem { FileInfo file; ActionType action; bool selected; ... };
 struct ActionHistoryEntry { std::wstring file_path; ActionType action_type; ... };
 
 enum class CliCommand { None, InstallService, UninstallService, RunService };
-struct ServiceArgs { std::string scan_path; bool installed; CliCommand command; };
+struct ServiceArgs { std::string scan_path; bool installed = false; CliCommand command; };
 ```
 
-### FileInfo and PathUtils (in `src/core/FileInfo.h`)
+### FileInfo (`src/core/FileInfo.h`)
 
 ```cpp
-// Windows FILETIME epoch (January 1, 1601) minus Unix epoch (January 1, 1970), in seconds.
-constexpr long long EPOCH_OFFSET = 13477420800LL;
-
+constexpr long long EPOCH_OFFSET = 13477420800LL;   // FILETIME → Unix epoch seconds
 struct FileInfo {
     std::wstring path;
     uint64_t size;
@@ -82,7 +82,7 @@ struct FileInfo {
 };
 ```
 
-### Strategy Enum (in `src/core/Strategy.h`)
+### Strategy Enum (`src/core/Strategy.h`)
 
 | Strategy | Value | Description |
 |----------|-------|-------------|
@@ -157,46 +157,44 @@ dupecheck/
 │   │   └── ActionModel.h     # FileType, ActionType, ActionItem, CliCommand, ServiceArgs
 │   │
 │   ├── hashing/              # Multi-tier hashing engine
-│   │   ├── xxhash/           # Local XxHash32 implementation
-│   │   ├── HashEngine.{h,cpp}  # Single-pass SHA256+XxHash
-│   │   └── xxhash_wrapper.h  # Thin C++ wrapper around XXH32
+│   │   ├── xxhash/           # Local XxHash32 implementation (inline .h + .cpp)
+│   │   ├── HashEngine.{h,cpp}  # Single-pass SHA256+XxHash via Bcrypt API
+│   │   └── xxhash_wrapper.h  # Thin C++ wrapper around compute_xxhash32()
 │   │
 │   ├── scanner/              # File enumeration & caching
-│   │   ├── CachedDatabase.{h,cpp}  # Legacy SQLite cache layer (deprecated)
-│   │   └── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
-│   │       └── FileScanner.h     # Alias for CachedScannerService
+│   │   ├── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
+│   │   ├── CachedDatabase.h          # Deprecated alias (extends DatabaseManager)
+│   │   ├── FileScanner.{h,cpp}       # Composition-based wrapper over CachedScannerService
+│   │   └── DatabaseManager.{h,cpp}   # SQLite persistence layer
 │   │
 │   ├── engine/               # Duplicate detection strategies (inline headers)
 │   │   ├── DuplicateEngine.{h,cpp}  # Strategy dispatching & result merging
 │   │   ├── ExactMatch.h              SHA256 match
 │   │   ├── NameVariant.h             Levenshtein name similarity
 │   │   ├── SizeHashSimilar.h         XxHash binning
-│   │   ├── ExtensionFamily.h         Extension family mapping
-│   │   └── FolderCopy.h              Directory tree hashing (compute_tree_hash)
+│   │   ├── ExtensionFamily.h         Extension family mapping (jpg/jpeg, etc.)
+│   │   └── FolderCopy.h              Directory tree hashing with relative paths
 │   │
 │   ├── organization/         # Batch actions on duplicate groups
-│   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration
-│   │   ├── RenameAction.h            Lightweight rename helper
+│   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration + undo history
+│   │   ├── RenameAction.h            Lightweight rename helper (kept for compatibility)
 │   │   ├── MoveAction.h              Lightweight move helper
 │   │   ├── DeleteAction.h            Lightweight delete helper
 │   │   └── SymlinkAction.h           Lightweight symlink creation/undo
 │   │
-│   ├── database/             # SQLite persistence layer
-│   │   └── DatabaseManager.{h,cpp}  Schema, CRUD operations, WAL mode
-│   │
 │   ├── service/              # Windows Service + CLI
 │   │   ├── ServiceHost.{h,cpp}    Service registration & lifecycle
-│   │   ├── NamedPipeServer.{h,cpp} GUI-service IPC
+│   │   └── NamedPipeServer.{h,cpp> GUI-service IPC (named pipe)
 │   │
 │   ├── gui/                  # ImGui-based user interface (Win32 backend)
 │   │   ├── Controls.cpp        Path input, scan/browse buttons
 │   │   ├── PreviewPanel.{h,cpp}  Action preview widget per group
-│   │   ├── SettingsDialog.{h,cpp}  Modal settings dialog
-│   │   └── ImGuiView.{h,cpp}       Main window + event loop
+│   │   ├── SettingsDialog.{h,cpp>  Modal settings dialog
+│   │   └── ImGuiView.{h,cpp}       Main window + event loop (run_gui)
 │   │
 │   └── utils/                # Shared utilities
-│       ├── JsonConfig.{h,cpp}  Lightweight JSON config reader/writer
-│       ├── Levenshtein.h       Templated edit-distance algorithm
+│       ├── JsonConfig.{h,cpp>  Lightweight JSON config reader/writer
+│       ├── Levenshtein.h      Templated edit-distance algorithm
 │       └── ExtensionFamilyMap.h Built-in extension family mappings
 │
 ├── resources/              # Application resources
@@ -207,7 +205,7 @@ dupecheck/
 1. **Single-pass hashing**: `HashEngine::compute()` streams through the file once, computing both XxHash32 and SHA256 simultaneously — no double I/O needed.
 2. **CachedScannerService** is the primary scanner with incremental updates based on file size + mtime comparison against the SQLite database.
 3. **WAL mode**: All SQLite databases use Write-Ahead Logging for concurrent read/write access across GUI and service processes.
-4. **No ThreadPool dependency**: The unused `ThreadPool` class has been removed; batch hashing uses `std::async` directly.
+4. **No ThreadPool dependency**: Batch hashing uses `std::async` directly (per-file async), with one thread per file rather than a bounded pool.
 
 ## License
 

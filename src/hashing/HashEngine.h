@@ -1,24 +1,25 @@
 #pragma once
 #include <windows.h>
+#include <bcrypt.h>
 #include <vector>
 #include <string>
 #include <future>
 #include "../core/FileInfo.h"
-#include "xxhash_wrapper.h"
 
-// Global Bcrypt state shared across all translation units.
-inline HMODULE g_bcrypt_handle = nullptr;
-inline BCRYPT_ALG_HANDLE g_bcrypt_alg_ = nullptr;
-inline bool s_initialized = false;
-inline std::once_flag s_init_flag{};
+// Global Bcrypt state — initialized via std::call_once on first use.
+extern HMODULE g_bcrypt_handle;
+extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
+extern bool s_initialized;
+extern std::once_flag s_init_flag;
 
 class HashEngine {
 public:
     static void init_bcrypt();
     static void cleanup();
     static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
+    // Single-pass SHA256+XxHash32 computation on the given file path.
     static HashResult compute(const wchar_t* path);
-    // Multi-threaded batch hash computation. Defined in HashEngine.cpp.
+    // Multi-threaded batch hash (one std::async per file).
     static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
 };
 
@@ -37,9 +38,9 @@ inline void HashEngine::cleanup() {
     s_initialized = false;
 }
 
+// Inline implementation of compute — defined in HashEngine.cpp for simplicity.
 inline HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
-
     HANDLE hFile = CreateFileW(
         PathUtils::to_long_path(path).c_str(),
         GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
