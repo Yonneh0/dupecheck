@@ -2,7 +2,7 @@
 
 ## Overview
 
-DupeCheck is a C++20 Windows application that finds duplicate files across folders/drives using multi-tier hashing (XxHash32 + SHA256) and provides batch organization actions. Runs as both GUI (.exe) and installable Windows Service with SQLite-backed caching.
+DupeCheck is a C++20 Windows application that finds duplicate files across folders/drives using multi-tier hashing (XxHash32 + SHA256) and provides batch organization actions. Runs as both GUI (.exe) and installable Windows Service with SQLite-backed caching at `%APPDATA%\DupeCheck\dupecheck.db`.
 
 ---
 
@@ -33,9 +33,9 @@ DupeCheck is a C++20 Windows application that finds duplicate files across folde
 │  ┌──────▼──────────────────────▼────────────┐ │
 │  │          Core Library                     │ │
 │  │  ┌────────────┐ ┌────────────────────┐    │ │
-│  │  │ FileScanner│ │ CachedDatabase     │    │ │
-│  │  │ (delegate, │ │ (SQLite cache)      │    │ │
-│  │  │  inherits) │ └────────┬───────────┘    │ │
+│  │  │ FileScanner│ │ CachedScannerService│   │ │
+│  │  │ (inherits  │ │ (SQLite cache)      │    │ │
+│  │  │  from it)  │ └────────┬───────────┘    │ │
 │  │  └────┬───────┘          │                │ │
 │  │  ┌────▼──────────────────▼──────────┐     │ │
 │  │  │   Duplicate Engine               │      │ │
@@ -70,6 +70,9 @@ struct ServiceArgs { std::string scan_path; bool installed; CliCommand command; 
 ### FileInfo and PathUtils (in `src/core/FileInfo.h`)
 
 ```cpp
+// Windows FILETIME epoch (January 1, 1601) minus Unix epoch (January 1, 1970), in seconds.
+constexpr long long EPOCH_OFFSET = 13477420800LL;
+
 struct FileInfo {
     std::wstring path;
     uint64_t size;
@@ -141,14 +144,14 @@ CREATE INDEX IF NOT EXISTS idx_action_session ON action_history(session_id);
 dupecheck/
 ├── CMakeLists.txt            # Top-level build configuration
 │
-├── external/                 # External dependencies (bundled, expect unzip before build)
+├── external/                 # External dependencies (bundled, unzip before build)
 │   ├── imgui/               # Dear ImGui source + Win32 backend
 │   └── sqlite3/             # SQLite amalgamation
 │
 ├── src/
-│   ├── main.cpp              # Entry point: CLI args → GUI or service
+│   ├── main.cpp              # Entry point: CLI args → GUI or service mode
 │   │
-│   ├── core/                 # Core type definitions (single header)
+│   ├── core/                 # Core type definitions
 │   │   ├── FileInfo.h        # FileInfo struct + PathUtils namespace
 │   │   ├── Strategy.h        # Strategy enum + StrategyConfig
 │   │   └── ActionModel.h     # FileType, ActionType, ActionItem, CliCommand, ServiceArgs
@@ -159,9 +162,9 @@ dupecheck/
 │   │   └── xxhash_wrapper.h  # Thin C++ wrapper around XXH32
 │   │
 │   ├── scanner/              # File enumeration & caching
-│   │   ├── CachedDatabase.{h,cpp}  # SQLite cache layer
-│   │   ├── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
-│   │   └── FileScanner.{h,cpp}     # Legacy alias for CachedScannerService
+│   │   ├── CachedDatabase.{h,cpp}  # Legacy SQLite cache layer (deprecated)
+│   │   └── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
+│   │       └── FileScanner.h     # Alias for CachedScannerService
 │   │
 │   ├── engine/               # Duplicate detection strategies (inline headers)
 │   │   ├── DuplicateEngine.{h,cpp}  # Strategy dispatching & result merging
@@ -172,18 +175,18 @@ dupecheck/
 │   │   └── FolderCopy.h              Directory tree hashing (compute_tree_hash)
 │   │
 │   ├── organization/         # Batch actions on duplicate groups
-│   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration (rename, move, delete)
+│   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration
 │   │   ├── RenameAction.h            Lightweight rename helper
 │   │   ├── MoveAction.h              Lightweight move helper
 │   │   ├── DeleteAction.h            Lightweight delete helper
-│   │   ├── SymlinkAction.h           Lightweight symlink creation/undo
-│   │   └── ArchiveAction.h           Lightweight archive/zip duplicates
+│   │   └── SymlinkAction.h           Lightweight symlink creation/undo
 │   │
-│   ├── database/             # SQLite persistence layer (session + action history)
+│   ├── database/             # SQLite persistence layer
 │   │   └── DatabaseManager.{h,cpp}  Schema, CRUD operations, WAL mode
 │   │
 │   ├── service/              # Windows Service + CLI
 │   │   ├── ServiceHost.{h,cpp}    Service registration & lifecycle
+│   │   ├── NamedPipeServer.{h,cpp} GUI-service IPC
 │   │
 │   ├── gui/                  # ImGui-based user interface (Win32 backend)
 │   │   ├── Controls.cpp        Path input, scan/browse buttons
@@ -202,8 +205,9 @@ dupecheck/
 ## Key Design Decisions
 
 1. **Single-pass hashing**: `HashEngine::compute()` streams through the file once, computing both XxHash32 and SHA256 simultaneously — no double I/O needed.
-2. **CachedDatabase** is a single shared class used by CachedScannerService. FileScanner delegates to it.
+2. **CachedScannerService** is the primary scanner with incremental updates based on file size + mtime comparison against the SQLite database.
 3. **WAL mode**: All SQLite databases use Write-Ahead Logging for concurrent read/write access across GUI and service processes.
+4. **No ThreadPool dependency**: The unused `ThreadPool` class has been removed; batch hashing uses `std::async` directly.
 
 ## License
 

@@ -4,25 +4,19 @@
 #include "hashing/HashEngine.h"
 #include "service/ServiceHost.h"
 
-static void initialize_database() {
-    std::wstring db_path = get_default_db_path();
-    DatabaseManager db(db_path);
-    if (!db.init()) {
-        MessageBoxW(nullptr, L"Failed to initialize database.", L"Error", MB_ICONERROR);
-        exit(1);
-    }
-}
-
+// Entry point: parses CLI arguments and dispatches to either GUI or service mode.
 int main() {
     HashEngine::init_bcrypt();
-
     ServiceArgs args = parse_args(__argc, __argv);
 
     switch (args.command) {
         case CliCommand::InstallService: {
             wchar_t exe_path[MAX_PATH];
-            GetModuleFileNameW(nullptr, exe_path, ARRAYSIZE(exe_path));
-            install_service(exe_path, L"C:\\");
+            if (!GetModuleFileNameW(nullptr, exe_path, ARRAYSIZE(exe_path))) {
+                MessageBoxA(nullptr, "Failed to determine executable path.", "DupeCheck", MB_ICONERROR);
+                break;
+            }
+            install_service(exe_path, args.scan_path.c_str());
             MessageBoxA(nullptr, "Service installed successfully.", "DupeCheck", MB_ICONINFORMATION);
             break;
         }
@@ -30,22 +24,20 @@ int main() {
             if (uninstall_service()) {
                 MessageBoxA(nullptr, "Service uninstalled successfully.", "DupeCheck", MB_ICONINFORMATION);
             } else {
-                MessageBoxA(nullptr, "Failed to uninstall service.", "DupeCheck", MB_ICONERROR);
+                MessageBoxA(nullptr, "Failed to uninstall service. Ensure the service is stopped first.", "DupeCheck", MB_ICONERROR);
             }
             break;
         }
         case CliCommand::RunService: {
-            ServiceHost::run_service(L"C:\\", 300);
+            ServiceHost::run_service(args.scan_path.empty() ? L"C:\\" : args.scan_path, 300);
             break;
         }
-        default: {
+        default:
             initialize_database();
-            HINSTANCE hInst = GetModuleHandle(nullptr);
-            run_gui(hInst, SW_SHOWDEFAULT, L"C:\\");
             HashEngine::cleanup();
-            return 0;
-        }
+            return run_gui(GetModuleHandle(nullptr), SW_SHOWDEFAULT, args.scan_path.empty() ? L"" : args.scan_path.c_str());
     }
 
+    HashEngine::cleanup();
     return 0;
 }

@@ -4,8 +4,6 @@
 #include <string>
 #include "FileInfo.h"
 #include "Strategy.h"
-#include "../engine/DuplicateEngine.h"
-#include "../engine/FolderCopy.h"
 
 // File type for action items.
 enum class FileType { Original, Duplicate };
@@ -38,8 +36,3 @@ struct ServiceArgs {
     bool installed = false;
     CliCommand command = CliCommand::None;
 };
-
-// Group directories with identical tree hashes (delegates to FolderCopy).
-inline std::vector<DuplicateGroup> folder_copy(const wchar_t* dir_path, Sha256& out_hash) {
-    return ::folder_copy({dir_path}, out_hash);
-}

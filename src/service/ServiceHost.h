@@ -1,8 +1,6 @@
 #pragma once
 #include <string>
-#include <vector>
 #include "../core/ActionModel.h"
-#include "../core/FileInfo.h"
 
 // Windows Service for periodic duplicate scanning.
 constexpr const wchar_t* SERVICE_NAME = L"DupeCheck";
@@ -13,9 +11,7 @@ public:
     static void run_service(const std::wstring& scan_path, int interval_seconds);
 private:
     inline static SERVICE_STATUS_HANDLE h_service_status_ = nullptr;
-    inline static std::wstring scan_path_;
     inline static bool is_running_ = false;
-    inline static int g_interval_seconds_ = 300;
 };
 
 // Parse command-line arguments.

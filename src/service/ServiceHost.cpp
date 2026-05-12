@@ -2,16 +2,10 @@
 #include <windows.h>
 #include "../hashing/HashEngine.h"
 
-inline static std::vector<PathUtils::FileInfo>& get_entries() {
-    static std::vector<PathUtils::FileInfo> entries;
-    return entries;
-}
-
 static void service_do_scan(const std::wstring& scan_path) {
-    PathUtils::enumerate_files(scan_path, get_entries());
-    for (auto& entry : get_entries()) {
-        HashEngine::compute(entry.path.c_str());
-    }
+    static std::vector<PathUtils::FileInfo> entries;
+    entries.clear();
+    PathUtils::enumerate_files(scan_path, entries);
 }
 
 void ServiceHost::run_service(const std::wstring& scan_path, int interval_seconds) {
@@ -27,9 +21,6 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
 
     if (!h_service_status_) return;
 
-    scan_path_ = scan_path;
-    g_interval_seconds_ = interval_seconds;
-
     SERVICE_STATUS ss{};
     ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     ss.dwCurrentState = SERVICE_START_PENDING;
@@ -39,14 +30,14 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
 
     HashEngine::init_bcrypt();
     is_running_ = true;
-    service_do_scan(scan_path_);
+    service_do_scan(scan_path);
 
     ss.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(h_service_status_, &ss);
 
     while (is_running_) {
-        Sleep(static_cast<DWORD>(g_interval_seconds_) * 1000);
-        if (is_running_) service_do_scan(scan_path_);
+        Sleep(static_cast<DWORD>(interval_seconds) * 1000);
+        if (is_running_) service_do_scan(scan_path);
     }
 
     ss.dwCurrentState = SERVICE_STOPPED;

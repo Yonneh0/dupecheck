@@ -1,8 +1,7 @@
 #include "CachedScannerService.h"
 #include "../hashing/HashEngine.h"
 
-CachedScannerService::CachedScannerService(const std::wstring& db_path, const std::wstring& cache_db_path)
-    : manager_(db_path), cache_db_(cache_db_path) {}
+CachedScannerService::CachedScannerService(const std::wstring& db_path) : manager_(db_path) {}
 
 bool CachedScannerService::init() { return manager_.init(); }
 

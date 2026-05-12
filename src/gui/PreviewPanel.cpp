@@ -1,18 +1,12 @@
 #include <imgui.h>
 #include "PreviewPanel.h"
 #include "../organization/OrganizationSvc.h"
+#include "../core/Strategy.h"
 
 void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     if (ImGui::TreeNode("Preview")) {
         for (const auto& group : groups) {
-            const char* sn = nullptr;
-            switch (group.strategy) {
-                case Strategy::ExactMatch:      sn = "Exact Match"; break;
-                case Strategy::NameVariant:     sn = "Name Variant";  break;
-                case Strategy::SizeHashSimilar: sn = "Size+Hash";     break;
-                case Strategy::ExtensionFamily: sn = "Extension Family"; break;
-                case Strategy::FolderCopy:      sn = "Folder Copy";   break;
-            }
+            const char* sn = strategy_to_string(group.strategy);
 
             if (ImGui::TreeNodeEx(&group, "%s (%zu files)", sn, static_cast<size_t>(group.files.size()))) {
                 for (size_t i = 0; i < group.files.size(); ++i) {

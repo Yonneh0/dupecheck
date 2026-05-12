@@ -2,9 +2,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <windows.h>
-#include <cstdint>
-
+// Windows FILETIME epoch (January 1, 1601) minus Unix epoch (January 1, 1970), in seconds.
 constexpr long long EPOCH_OFFSET = 13477420800LL;
 constexpr size_t HASH_BUFFER_SIZE = 65536;
 
