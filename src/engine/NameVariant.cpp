@@ -1,9 +1,8 @@
-#pragma once
-#include <vector>
-#include "../core/FileInfo.h"
+#include "NameVariant.h"
+#include <unordered_map>
 #include "../utils/Levenshtein.h"
 
-inline std::vector<DuplicateGroup> name_variant(const std::vector<FileInfo>& files, int threshold) {
+std::vector<DuplicateGroup> name_variant(const std::vector<FileInfo>& files, int threshold) {
     std::unordered_map<std::array<uint8_t, 32>, std::vector<FileInfo>> sha_groups;
     for (const auto& f : files) sha_groups[f.sha256].push_back(f);
 

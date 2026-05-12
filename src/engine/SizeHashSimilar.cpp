@@ -1,8 +1,8 @@
-#pragma once
-#include <vector>
-#include "../core/FileInfo.h"
+#include "SizeHashSimilar.h"
+#include <unordered_map>
+#include <algorithm>
 
-inline std::vector<DuplicateGroup> size_hash_similar(const std::vector<FileInfo>& files, uint32_t tolerance) {
+std::vector<DuplicateGroup> size_hash_similar(const std::vector<FileInfo>& files, uint32_t tolerance) {
     std::unordered_map<uint64_t, std::vector<FileInfo>> size_groups;
     for (const auto& f : files) size_groups[f.size].push_back(f);
 
@@ -10,6 +10,7 @@ inline std::vector<DuplicateGroup> size_hash_similar(const std::vector<FileInfo>
     for (auto& [size, group] : size_groups) {
         if (group.size() < 2) continue;
 
+        // Sort by xxhash so that nearby values are adjacent.
         auto sorted = group;
         std::sort(sorted.begin(), sorted.end(), [](const FileInfo& a, const FileInfo& b) { return a.xxhash < b.xxhash; });
 

@@ -2,43 +2,39 @@
 #include <string>
 #include <unordered_map>
 
-// Extension family mapping for detecting duplicates across related extensions.
-// Maps each extension to a canonical "family" name so that files with the same
-// content but different extensions (e.g., jpg / jpeg) are detected as duplicates.
 class ExtensionFamilyMap {
 public:
-    static std::string get_family(const std::string& ext) {
+    static std::wstring get_family(const std::wstring& ext) {
         auto it = builtin_families().find(ext);
         return (it != builtin_families().end()) ? it->second : ext;
     }
 
-    static bool is_same_family(const std::string& a, const std::string& b) {
+    static bool is_same_family(const std::wstring& a, const std::wstring& b) {
         return get_family(a) == get_family(b);
     }
 
 private:
     ExtensionFamilyMap() = delete;
-    static const std::unordered_map<std::string, std::string>& builtin_families();
+    static const std::unordered_map<std::wstring, std::wstring>& builtin_families();
 };
 
-inline const std::unordered_map<std::string, std::string>& ExtensionFamilyMap::builtin_families() {
-    // Only map extensions to families where identical binary content across them is plausible.
-    static const std::unordered_map<std::string, std::string> families = {
-        {"jpg", "image"},   {"jpeg", "image"},  {"jpe", "image"},
-        {"png", "image"},   {"gif", "image"},   {"bmp", "image"},
-        {"tiff", "image"},  {"tif", "image"},   {"webp", "image"},
+inline const std::unordered_map<std::wstring, std::wstring>& ExtensionFamilyMap::builtin_families() {
+    static const std::unordered_map<std::wstring, std::wstring> families = {
+        {L"jpg", L"image"},   {L"jpeg", L"image"},  {L"jpe", L"image"},
+        {L"png", L"image"},   {L"gif", L"image"},   {L"bmp", L"image"},
+        {L"tiff", L"image"},  {L"tif", L"image"},   {L"webp", L"image"},
 
-        {"docx", "document"},  {"doc", "document"}, {"docm", "document"},
-        {"xlsx", "spreadsheet"}, {"xls", "spreadsheet"}, {"csv", "spreadsheet"},
+        {L"docx", L"document"},  {L"doc", L"document"}, {L"docm", L"document"},
+        {L"xlsx", L"spreadsheet"}, {L"xls", L"spreadsheet"}, {L"csv", L"spreadsheet"},
 
-        {"zip", "archive"}, {"rar", "archive"},   {"7z", "archive"},
-        {"tar", "archive"},  {"gz", "archive"},
+        {L"zip", L"archive"}, {L"rar", L"archive"},   {L"7z", L"archive"},
+        {L"tar", L"archive"},  {L"gzip", L"archive"},
 
-        {"mp4", "video"}, {"avi", "video"}, {"mkv", "video"},
-        {"mov", "video"},  {"wmv", "video"},
+        {L"mp4", L"video"}, {L"avi", L"video"}, {L"mkv", L"video"},
+        {L"mov", L"video"},  {L"wmv", L"video"},
 
-        {"mp3", "audio"}, {"wav", "audio"}, {"ogg", "audio"},
-        {"m4a", "audio"}, {"aac", "audio"}, {"flac", "audio"},
+        {L"mp3", L"audio"}, {L"wav", L"audio"}, {L"ogg", L"audio"},
+        {L"m4a", L"audio"}, {L"aac", L"audio"}, {L"flac", L"audio"},
     };
     return families;
 }

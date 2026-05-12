@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "../core/ActionModel.h"
+#include "../engine/DuplicateEngine.h"
 #include "MergeAction.h"
 
 /// Orchestrates batch actions on duplicate file groups.
@@ -19,7 +20,12 @@ public:
     // Exposed for UI access (Undo All button).
     inline static std::vector<ActionHistoryEntry> history_;
 
-private:
+    /// Generate action items for a single duplicate group.
     static std::vector<ActionItem> generate_actions(const DuplicateGroup& group, ActionType action_type = ActionType::Rename);
+
+    /// Generate action items for multiple duplicate groups.
+    static std::vector<ActionItem> generate_actions(const std::vector<DuplicateGroup>& groups, ActionType action_type = ActionType::Rename);
+
+private:
     static void apply_actions(const std::vector<ActionItem>& items);
 };

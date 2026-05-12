@@ -10,11 +10,21 @@ public:
         : pipe_name_(L"\\\\.\\pipe\\" + pipe_name), db_(db) {}
 
     void start() { running_ = true; server_thread_ = std::thread([this]() { run_loop(); }); }
-    ~PipeImpl() { if (running_) { CloseHandle(pipe_handle_); server_thread_.join(); } }
+    ~PipeImpl() {
+        running_ = false;
+        if (pipe_handle_ != INVALID_HANDLE_VALUE) {
+            DisconnectNamedPipe(pipe_handle_);
+            CloseHandle(pipe_handle_);
+        }
+        if (server_thread_.joinable()) server_thread_.join();
+    }
 
 private:
-    std::wstring pipe_name_; DatabaseManager* db_ = nullptr; bool running_ = false;
-    HANDLE pipe_handle_ = INVALID_HANDLE_VALUE; std::thread server_thread_;
+    std::wstring pipe_name_;
+    DatabaseManager* db_ = nullptr;
+    bool running_ = false;
+    HANDLE pipe_handle_ = INVALID_HANDLE_VALUE;
+    std::thread server_thread_;
 
     void run_loop() {
         while (running_) {
@@ -24,7 +34,8 @@ private:
             if (pipe_handle_ == INVALID_HANDLE_VALUE) { Sleep(1000); continue; }
 
             ConnectNamedPipe(pipe_handle_, nullptr);
-            char buffer[4096]; DWORD bytes_read = 0;
+            char buffer[4096];
+            DWORD bytes_read = 0;
 
             while (ReadFile(pipe_handle_, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
                 std::string command(buffer, bytes_read);
@@ -42,6 +53,8 @@ private:
             }
 
             DisconnectNamedPipe(pipe_handle_);
+            CloseHandle(pipe_handle_);
+            pipe_handle_ = INVALID_HANDLE_VALUE;
         }
     }
 };

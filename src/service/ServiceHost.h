@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "../core/ActionModel.h"
+#include "../utils/DbPath.h"
 
 /// Windows service for periodic duplicate scanning.
 constexpr const wchar_t* SERVICE_NAME       = L"DupeCheck";
@@ -20,5 +21,6 @@ private:
 
 /// Parse command-line arguments (returns CLI mode or GUI with optional scan path).
 ServiceArgs parse_args(int argc, char** argv);
-bool install_service(const wchar_t* exe_path, const wchar_t* scan_path);
+
+bool install_service(const wchar_t* exe_path);
 bool uninstall_service();

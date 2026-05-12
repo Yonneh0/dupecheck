@@ -7,7 +7,6 @@
 void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     if (groups.empty()) {
         ImGui::TextDisabled("No duplicates found — try scanning a different folder.");
-        // Show undo-all button only when there are actions to undo.
         if (!OrganizationSvc::history_.empty() && ImGui::Button("Undo All Actions")) {
             while (!OrganizationSvc::history_.empty()) OrganizationSvc::undo_actions();
         }
@@ -15,7 +14,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     }
 
     for (const auto& group : groups) {
-        // Color-code strategy type.
         ImVec4 strategy_color{};
         switch (group.strategy) {
             case Strategy::ExactMatch:      strategy_color = ImVec4(0.6f, 1.0f, 0.6f, 1.0f); break;
@@ -25,13 +23,13 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
             case Strategy::FolderCopy:      strategy_color = ImVec4(1.0f, 1.0f, 0.6f, 1.0f); break;
         }
 
-        if (ImGui::TreeNodeEx(&group, "%s (%zu files)", group.label.c_str(), static_cast<size_t>(group.files.size()))) {
+        std::string tree_id = "group_" + std::to_string(reinterpret_cast<uintptr_t>(&group));
+        if (ImGui::TreeNodeEx(tree_id.c_str(), ImGuiTreeNodeFlags_None, "%s (%zu files)", group.label.c_str(), static_cast<size_t>(group.files.size()))) {
             for (size_t i = 0; i < group.files.size(); ++i) {
                 std::string path_str = PathUtils::wide_to_utf8(group.files[i].path);
 
                 if (i > 0) ImGui::Indent();
 
-                // First file is the original (green), rest are duplicates (yellow).
                 if (i == 0) {
                     ImGui::PushStyleColor(ImGuiCol_Text, strategy_color);
                     ImGui::Text("O %s", path_str.c_str());
@@ -40,7 +38,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
                     ImGui::Text("D %s", path_str.c_str());
                 }
 
-                // Show file size below the path.
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                 std::string size_str = (group.files[i].size >= 1024 * 1024)
                     ? std::to_string(group.files[i].size / (1024 * 1024)) + " MB"
@@ -54,7 +51,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
                 ImGui::PopStyleColor();
             }
 
-            // Action buttons per group.
             if (ImGui::Button("Apply All")) {
                 auto items = OrganizationSvc::generate_actions(group, ActionType::Rename);
                 OrganizationSvc::apply(items);
@@ -68,7 +64,6 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
         }
     }
 
-    // Single undo-all button at the bottom — only shown when there are actions.
     if (!OrganizationSvc::history_.empty()) {
         if (ImGui::Button("Undo All Actions")) {
             while (!OrganizationSvc::history_.empty()) OrganizationSvc::undo_actions();

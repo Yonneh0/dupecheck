@@ -1,20 +1,22 @@
-#pragma once
-#include <vector>
+#include "FolderCopy.h"
+#include <algorithm>
 #include <unordered_map>
-#include "../core/FileInfo.h"
+#include "../core/Strategy.h"
 #include "../hashing/HashEngine.h"
 
-static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
+void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     HashEngine::init_bcrypt();
 
+    // Enumerate files recursively under this directory.
     std::vector<FileInfo> entries;
     PathUtils::enumerate_files(dir_path, entries);
 
     if (entries.empty()) {
-        std::fill(out_hash.begin(), out_hash.end(), 0);
+        out_hash.fill(0);
         return;
     }
 
+    // Build a sorted list of relative paths and sizes.
     struct Entry {
         std::wstring rel_path;
         uint64_t size;
@@ -33,25 +35,17 @@ static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     std::sort(file_entries.begin(), file_entries.end(),
               [](const Entry& a, const Entry& b) { return a.rel_path < b.rel_path; });
 
+    // Serialize into a single string and hash with SHA256.
     std::string sha_input;
     sha_input.reserve(128 * entries.size());
     for (const auto& [rel_path, sz] : file_entries) {
         sha_input += PathUtils::wide_to_utf8(rel_path) + "|" + std::to_string(sz) + "\n";
     }
 
-    BCRYPT_HASH_HANDLE hHash = nullptr;
-    NTSTATUS status = BCryptCreateHash(HashEngine::get_alg_handle(), &hHash, nullptr, 0, nullptr, 0, 0);
-    if (status == ERROR_SUCCESS) {
-        BCryptHashData(hHash, reinterpret_cast<uint8_t*>(const_cast<char*>(sha_input.data())),
-                       static_cast<DWORD>(sha_input.size()), 0);
-        BCryptFinishHash(hHash, out_hash.data(), static_cast<DWORD>(out_hash.size()), 0);
-        BCryptDestroyHash(hHash);
-    } else {
-        std::fill(out_hash.begin(), out_hash.end(), static_cast<uint8_t>(dir_path.size()));
-    }
+    out_hash = HashEngine::compute_sha256_data(sha_input.data(), sha_input.size());
 }
 
-inline std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& dirs) {
+std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& dirs) {
     std::unordered_map<Sha256, std::vector<std::wstring>> hash_to_dirs;
     for (const auto& d : dirs) {
         Sha256 h{};

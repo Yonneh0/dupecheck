@@ -4,34 +4,22 @@
 #include <vector>
 #include "../core/FileInfo.h"
 
-// Global BCrypt state — initialized on first use via std::call_once.
 extern HMODULE g_bcrypt_handle;
 extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
 extern std::once_flag s_init_flag;
 
-/// Computes XxHash32 and SHA256 for files using single-pass I/O.
 class HashEngine {
 public:
-    /// Initialize the BCrypt SHA256 algorithm handle (thread-safe, called once).
     static void init_bcrypt();
-
-    /// Close the BCrypt algorithm handle. Call at shutdown.
     static void cleanup();
-
-    /// Get the SHA256 algorithm handle — valid after init_bcrypt().
     static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
-
-    /// Compute XxHash32 and SHA256 for a single file in one I/O pass.
     static HashResult compute(const wchar_t* path);
-
-    /// Batch hash files using deferred async tasks (one per file).
     static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
 
 private:
     inline static bool s_initialized_ = false;
 };
 
-// Initialize BCrypt SHA256 algorithm handle. Called once before any hashing.
 inline void HashEngine::init_bcrypt() {
     if (s_initialized_) return;
     std::call_once(s_init_flag, []() {
@@ -40,7 +28,6 @@ inline void HashEngine::init_bcrypt() {
     });
 }
 
-// Close the BCrypt algorithm handle. Call at shutdown.
 inline void HashEngine::cleanup() {
     if (g_bcrypt_alg_) {
         BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
@@ -49,7 +36,6 @@ inline void HashEngine::cleanup() {
     s_initialized_ = false;
 }
 
-// Single-pass SHA256+XxHash32 computation on the given file path.
 inline HashResult HashEngine::compute(const wchar_t* path) {
     HashResult result{};
     HANDLE hFile = CreateFileW(

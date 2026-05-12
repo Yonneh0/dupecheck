@@ -2,7 +2,7 @@
 #include <string>
 #include <memory>
 class DatabaseManager;
-/// Named pipe server for GUI-service IPC communication.
+
 class NamedPipeServer {
 public:
     explicit NamedPipeServer(const std::wstring& pipe_name, DatabaseManager* db);

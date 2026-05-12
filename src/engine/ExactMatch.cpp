@@ -1,10 +1,7 @@
-#pragma once
-#include <vector>
-#include <array>
+#include "ExactMatch.h"
 #include <unordered_map>
-#include "../core/FileInfo.h"
 
-inline std::vector<DuplicateGroup> exact_match(const std::vector<FileInfo>& files) {
+std::vector<DuplicateGroup> exact_match(const std::vector<FileInfo>& files) {
     std::unordered_map<std::array<uint8_t, 32>, std::vector<FileInfo>> sha_groups;
     for (const auto& f : files) {
         sha_groups[f.sha256].push_back(f);

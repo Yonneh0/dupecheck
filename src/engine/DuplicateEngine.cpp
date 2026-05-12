@@ -1,7 +1,6 @@
 #include "DuplicateEngine.h"
 #include <algorithm>
 
-// Priority order: ExactMatch > NameVariant > SizeHashSimilar > ExtensionFamily > FolderCopy.
 static uint32_t strategy_priority(Strategy s) {
     switch (s) {
         case Strategy::ExactMatch:      return 0;
@@ -14,7 +13,6 @@ static uint32_t strategy_priority(Strategy s) {
 }
 
 std::vector<DuplicateGroup> deduplicate_groups(std::vector<DuplicateGroup>&& groups) {
-    // Sort by strategy priority so higher-priority groups are processed first.
     std::sort(groups.begin(), groups.end(), [](const DuplicateGroup& a, const DuplicateGroup& b) {
         return strategy_priority(a.strategy) < strategy_priority(b.strategy);
     });
@@ -27,7 +25,6 @@ std::vector<DuplicateGroup> deduplicate_groups(std::vector<DuplicateGroup>&& gro
         g.files.erase(it, g.files.end());
     }
 
-    // Remove empty groups.
     groups.erase(
         std::remove_if(groups.begin(), groups.end(), [](const DuplicateGroup& g) { return g.files.empty(); }),
         groups.end());

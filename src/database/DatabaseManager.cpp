@@ -1,5 +1,4 @@
 #include "DatabaseManager.h"
-#include <unordered_set>
 
 static const char* SCHEMA = R"(
 CREATE TABLE IF NOT EXISTS files (
@@ -13,7 +12,7 @@ CREATE INDEX IF NOT EXISTS idx_files_xxhash ON files(xxhash32);
 
 CREATE TABLE IF NOT EXISTS scan_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, path_hash BIGINT DEFAULT 0,
-    scan_path TEXT NOT NULL, created_at BIGINT DEFAULT (strftime('%s', 'now')),
+    created_at BIGINT DEFAULT (strftime('%s', 'now')),
     file_count INT, duplicate_count INT, strategy_flags INT
 );
 
@@ -29,10 +28,11 @@ DatabaseManager::DatabaseManager(const std::wstring& db_path) : db_path_(db_path
 DatabaseManager::~DatabaseManager() { if (db_) sqlite3_close(db_); }
 
 bool DatabaseManager::init() {
-    int rc = sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+    std::string utf8_db_path = PathUtils::wide_to_utf8(db_path_);
+    int rc = sqlite3_open_v2(utf8_db_path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
     if (rc != SQLITE_OK) return false;
     const char* wal_sql = "PRAGMA journal_mode=WAL;";
-    return rc == SQLITE_OK && sqlite3_exec(db_, wal_sql, nullptr, nullptr, nullptr) == SQLITE_OK
+    return sqlite3_exec(db_, wal_sql, nullptr, nullptr, nullptr) == SQLITE_OK
         && sqlite3_exec(db_, SCHEMA, nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
@@ -82,7 +82,7 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
         fi.size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 1));
         fi.mtime = sqlite3_column_int64(stmt, 2);
         fi.xxhash = static_cast<XxHash32>(sqlite3_column_int64(stmt, 3));
-        const unsigned char* sha_raw = sqlite3_column_blob(stmt, 4);
+        const unsigned char* sha_raw = static_cast<const unsigned char*>(sqlite3_column_blob(stmt, 4));
         int sha_len = sqlite3_column_bytes(stmt, 4);
         if (sha_raw && sha_len == 32) std::copy(sha_raw, sha_raw + 32, fi.sha256.begin());
         results.push_back(std::move(fi));
@@ -92,20 +92,28 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
 }
 
 bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& current_paths) {
-    if (current_paths.empty()) return (sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr) == SQLITE_OK);
-
-    std::string where = "WHERE path NOT IN (";
-    bool first = true;
-    for (const auto& p : current_paths) {
-        std::string utf8_path = PathUtils::wide_to_utf8(p);
-        std::string escaped;
-        escaped.reserve(utf8_path.size() * 2 + 1);
-        for (char c : utf8_path) escaped += (c == '\'') ? "''" : c;
-        where += first ? "'" + escaped + "'" : ", '" + escaped + "'";
-        first = false;
+    if (current_paths.empty()) {
+        return sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr) == SQLITE_OK;
     }
-    where += ")";
-    return sqlite3_exec(db_, ("DELETE FROM files " + where).c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
+    std::string placeholders;
+    placeholders.reserve(current_paths.size() * 2);
+    for (size_t i = 0; i < current_paths.size(); ++i) {
+        if (i > 0) placeholders += ',';
+        placeholders += '?';
+    }
+    std::string sql = "DELETE FROM files WHERE path NOT IN (" + placeholders + ")";
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+    for (size_t i = 0; i < current_paths.size(); ++i) {
+        std::string utf8_path = PathUtils::wide_to_utf8(current_paths[i]);
+        sqlite3_bind_text(stmt, static_cast<int>(i + 1), utf8_path.c_str(),
+                          static_cast<int>(utf8_path.size()), SQLITE_TRANSIENT);
+    }
+
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 bool DatabaseManager::save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags) {

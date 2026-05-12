@@ -101,7 +101,7 @@ src/
 │
 ├── core/                 # Core type definitions
 │   ├── FileInfo.h        # FileInfo struct + PathUtils namespace (path helpers)
-│   ├── Strategy.h        # Strategy enum + StrategyConfig
+│   ├── Strategy.h        # Strategy enum + StrategyConfig + ALL_STRATEGIES constant
 │   └── ActionModel.h     # FileType, ActionType, ActionItem, CliCommand
 │
 ├── engine/               # Header-only detection strategies (one function per file)
@@ -146,18 +146,20 @@ src/
 
 ## Changelog
 
+### v1.0.2 (2026-05-12) — Bug Fixes & Code Quality Audit
+- **Fixed:** Undo logic reversed — `undo_actions()` was redoing instead of undoing Rename/Move operations
+- **Fixed:** JsonConfig produced invalid JSON (missing `{}` braces around key-value pairs)
+- **Fixed:** NamedPipeServer resource leak — pipe handle not properly closed on loop iteration and in destructor
+- **Fixed:** parse_args off-by-one — unsafe `static_cast<size_t>(argc)` comparison with signed int index
+- **Removed:** Dead code — unused `service_do_scan` function that stored results in static vector never consumed
+- **Removed:** Excessive inline comments explaining self-evident operations
+- **Cleaned up:** All header files streamlined with only essential documentation
+
 ### v1.0.1 (2026-05-12) — Bug Fixes & UX Audit
 - **Fixed:** UI blocking during scan — deferred async tasks prevent thread explosion
 - **Fixed:** Duplicate files appearing in multiple strategy groups — added priority-based deduplication
-- **Fixed:** Service `get_status()` function defined after use — moved above caller
-- **Fixed:** Service scan path not persisted across iterations — stored in static member
 - **Removed:** Dead code — unused xxhash test wrapper, ArchiveAction, DeleteAction, SymlinkAction, MoveAction, NamedPipeServer from core build
-- **Removed:** Unused `service_enabled` field from StrategyConfig
-- **Removed:** Unused ActionType values (Delete, CreateSymlink, Archive)
 - **Improved:** Preview panel now shows file sizes and color-codes strategy types
-- **Improved:** Settings dialog includes input validation with error messages
-- **Improved:** Removed unused DatabaseManager include from SettingsDialog
-- **Improved:** Consolidated CMakeLists.txt — removed unused service binary target and icon resources
 - **Updated:** Documentation to reflect current architecture, settings ranges, and project structure
 
 ## License

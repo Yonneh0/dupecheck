@@ -7,7 +7,6 @@
 #include "../database/DatabaseManager.h"
 #include "../hashing/HashEngine.h"
 
-// Browse for a folder using SHBrowseForFolder dialog.
 static void browse_for_folder(std::wstring& path) {
     CoInitialize(nullptr);
     BROWSEINFOW bi{};
@@ -22,7 +21,6 @@ static void browse_for_folder(std::wstring& path) {
     CoUninitialize();
 }
 
-/// Validate that the given path exists and is a directory. Returns true if valid.
 static bool validate_path(const std::wstring& path) {
     if (path.empty()) {
         MessageBoxW(nullptr, L"Please enter or browse for a folder path.", "Scan Path", MB_ICONWARNING);
@@ -44,7 +42,6 @@ static bool validate_path(const std::wstring& path) {
 }
 
 void render_controls(std::wstring& scan_path) {
-    // Path input field — pressing Enter triggers a scan.
     wchar_t path_buf[512];
     if (!scan_path.empty()) wcscpy_s(path_buf, scan_path.c_str());
     else path_buf[0] = L'\0';
@@ -54,11 +51,9 @@ void render_controls(std::wstring& scan_path) {
         scan_path.assign(path_buf);
     }
 
-    // Browse button.
     ImGui::SameLine();
     if (ImGui::Button("Browse")) browse_for_folder(scan_path);
 
-    // Scan button — validates path then triggers a full scan.
     ImGui::SameLine(320, 8);
     if (ImGui::Button("Scan", ImVec2(80, 30))) {
         if (validate_path(scan_path)) {
@@ -66,7 +61,6 @@ void render_controls(std::wstring& scan_path) {
         }
     }
 
-    // Path status indicator — positioned below controls to persist.
     if (scan_path.empty()) {
         ImGui::TextDisabled("[No path set — enter a folder or click Browse]");
     } else {
@@ -86,10 +80,7 @@ void render_controls(std::wstring& scan_path) {
         }
     }
 
-    // Render preview panel below controls.
     render_preview_panel(ImGuiView::get_results());
-
-    // Settings button in the corner (rendered by its own function).
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
     render_settings_dialog();
 }

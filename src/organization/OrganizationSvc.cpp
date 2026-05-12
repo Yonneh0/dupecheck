@@ -1,8 +1,9 @@
 #include "OrganizationSvc.h"
+#include "../engine/DuplicateEngine.h"
 
 std::wstring OrganizationSvc::generate_renamed_path(const FileInfo& file, int index) {
     std::wstring result = PathUtils::get_parent_dir(file.path);
-    if (!result.empty() && result.back() != L'\\') result += L'\\";
+    if (!result.empty() && result.back() != L'\\') result += L"\\";
     return result + PathUtils::get_name_without_ext(file.path) + L" (" + std::to_wstring(index + 1) + L")." + PathUtils::get_extension(file.path);
 }
 
@@ -26,12 +27,9 @@ std::vector<ActionItem> OrganizationSvc::generate_actions(const DuplicateGroup& 
                 case ActionType::MoveToDuplicatesFolder: {
                     std::wstring ext = PathUtils::get_extension(group.files[i].path);
                     std::wstring base_name = PathUtils::get_name_without_ext(group.files[i].path);
-                    item.new_name = "duplicates/" + (ext.empty() ? base_name : base_name + L"." + ext);
+                    item.new_name = PathUtils::wide_to_utf8(L"duplicates\\" + (ext.empty() ? base_name : base_name + L"." + ext));
                     break;
                 }
-                case ActionType::Delete:
-                    item.new_name = "(deleted)";
-                    break;
                 default:
                     break;
             }
@@ -51,13 +49,13 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
 
         switch (item.action) {
             case ActionType::Rename: {
-                // copy_index is zero-based offset from the original (i-1), so use it directly.
                 int idx = static_cast<int>(item.copy_index);
                 std::wstring new_name = generate_renamed_path(item.file, idx);
-                std::wstring old_name = PathUtils::to_long_path(item.file.path);
-                if (MoveFileExW(old_name.c_str(), PathUtils::to_long_path(new_name).c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                    entry.old_value = PathUtils::wide_to_utf8(old_name);
+                if (MoveFileExW(PathUtils::to_long_path(item.file.path).c_str(),
+                               PathUtils::to_long_path(new_name).c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                    entry.old_value = PathUtils::wide_to_utf8(item.file.path);
                     entry.new_value = PathUtils::wide_to_utf8(new_name);
+                    history_.push_back(entry);
                 }
                 break;
             }
@@ -67,24 +65,15 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
                 std::wstring full_name = PathUtils::get_name_without_ext(item.file.path) + L"." + PathUtils::get_extension(item.file.path);
                 if (MoveFileExW(PathUtils::to_long_path(item.file.path).c_str(),
                                PathUtils::to_long_path(parent_dir + L"\\" + full_name).c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                    entry.old_value = PathUtils::wide_to_utf8(PathUtils::to_long_path(item.file.path));
+                    entry.old_value = PathUtils::wide_to_utf8(item.file.path);
                     entry.new_value = PathUtils::wide_to_utf8(parent_dir + L"\\" + full_name);
-                }
-                break;
-            }
-            case ActionType::Delete: {
-                if (DeleteFileW(PathUtils::to_long_path(item.file.path).c_str())) {
-                    entry.old_value = PathUtils::wide_to_utf8(PathUtils::to_long_path(item.file.path));
-                    entry.new_value = "(deleted)";
-                    entry.backup_path = item.file.path;
+                    history_.push_back(entry);
                 }
                 break;
             }
             default:
                 break;
         }
-
-        history_.push_back(entry);
     }
 }
 
@@ -97,19 +86,9 @@ void OrganizationSvc::undo_actions() {
     switch (entry.action_type) {
         case ActionType::Rename:
         case ActionType::MoveToDuplicatesFolder:
-            MoveFileExW(PathUtils::utf8_to_wide(entry.old_value).c_str(),
-                        PathUtils::utf8_to_wide(entry.new_value).c_str(), MOVEFILE_REPLACE_EXISTING);
-            break;
-        case ActionType::Delete:
-            if (!entry.backup_path.empty()) {
-                HANDLE h = CreateFileW(PathUtils::to_long_path(entry.backup_path).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-                if (h != INVALID_HANDLE_VALUE) {
-                    DWORD bw;
-                    const wchar_t marker[] = L"[restored by DupeCheck]";
-                    WriteFile(h, marker, static_cast<DWORD>(sizeof(marker)), &bw, nullptr);
-                    CloseHandle(h);
-                }
-            }
+            // Undo: move from new location back to original location
+            MoveFileExW(PathUtils::utf8_to_wide(entry.new_value).c_str(),
+                        PathUtils::utf8_to_wide(entry.old_value).c_str(), MOVEFILE_REPLACE_EXISTING);
             break;
     }
 }

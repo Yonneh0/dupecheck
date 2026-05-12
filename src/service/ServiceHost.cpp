@@ -1,18 +1,18 @@
 #include "ServiceHost.h"
 #include <windows.h>
+#include "../core/FileInfo.h"
 #include "../hashing/HashEngine.h"
+#include "../scanner/CachedScannerService.h"
+#include "../engine/DuplicateEngine.h"
+#include "../database/DatabaseManager.h"
+#include "../gui/SettingsDialog.h"
+#include "../gui/ImGuiView.h"
 
-static void service_do_scan(const std::wstring& scan_path) {
-    static std::vector<PathUtils::FileInfo> entries;
-    entries.clear();
-    PathUtils::enumerate_files(scan_path, entries);
-}
-
-SERVICE_STATUS get_status(bool running) {
+static SERVICE_STATUS make_status(DWORD state, DWORD controls = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN) {
     SERVICE_STATUS ss{};
     ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    ss.dwCurrentState = running ? SERVICE_RUNNING : SERVICE_STOPPED;
-    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    ss.dwCurrentState = state;
+    ss.dwControlsAccepted = controls;
     return ss;
 }
 
@@ -20,38 +20,49 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
     current_scan_path_ = scan_path;
 
     h_service_status_ = RegisterServiceCtrlHandlerW(SERVICE_NAME, [](DWORD control) {
-        switch (control) {
-            case SERVICE_CONTROL_STOP:
-            case SERVICE_CONTROL_SHUTDOWN:
-                is_running_ = false;
-                break;
+        if (control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN) {
+            is_running_ = false;
         }
-        SetServiceStatus(h_service_status_, &get_status(is_running_));
+        SERVICE_STATUS ss = make_status(is_running_ ? SERVICE_RUNNING : SERVICE_STOPPED);
+        SetServiceStatus(h_service_status_, &ss);
     });
 
     if (!h_service_status_) return;
 
-    SERVICE_STATUS ss{};
-    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    ss.dwCurrentState = SERVICE_START_PENDING;
-    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
-    ss.dwWaitHint = 5000;
-    SetServiceStatus(h_service_status_, &ss);
+    { SERVICE_STATUS ss = make_status(SERVICE_START_PENDING, 0); SetServiceStatus(h_service_status_, &ss); }
 
     HashEngine::init_bcrypt();
-    is_running_ = true;
-    service_do_scan(scan_path);
 
-    ss.dwCurrentState = SERVICE_RUNNING;
-    SetServiceStatus(h_service_status_, &ss);
+    CachedScannerService scanner;
+    DatabaseManager db{get_default_db_path()};
+    if (!db.init()) {
+        is_running_ = false;
+        SERVICE_STATUS ss = make_status(SERVICE_STOPPED);
+        SetServiceStatus(h_service_status_, &ss);
+        return;
+    }
+
+    is_running_ = true;
+    { SERVICE_STATUS ss = make_status(SERVICE_RUNNING); SetServiceStatus(h_service_status_, &ss); }
 
     while (is_running_) {
         Sleep(static_cast<DWORD>(interval_seconds) * 1000);
-        if (is_running_ && !current_scan_path_.empty()) service_do_scan(current_scan_path_);
+        if (!is_running_ || current_scan_path_.empty()) continue;
+
+        if (scanner.init()) {
+            auto files = scanner.scan(current_scan_path_.c_str());
+            DuplicateEngine engine{get_strategy_config_impl()};
+            auto groups = engine.find_duplicates(files, ALL_STRATEGIES);
+
+            int64_t path_hash = 0;
+            for (wchar_t c : current_scan_path_) path_hash += static_cast<int64_t>(c);
+            std::string scan_path_utf8 = PathUtils::wide_to_utf8(current_scan_path_);
+            db.save_session(path_hash, scan_path_utf8, static_cast<int>(files.size()),
+                           static_cast<int>(groups.size()), ALL_STRATEGIES);
+        }
     }
 
-    ss.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(h_service_status_, &ss);
+    { SERVICE_STATUS ss = make_status(SERVICE_STOPPED); SetServiceStatus(h_service_status_, &ss); }
 }
 
 ServiceArgs parse_args(int argc, char** argv) {
@@ -59,7 +70,7 @@ ServiceArgs parse_args(int argc, char** argv) {
     if (argc < 1) return args;
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
-        if (arg == "--install-service" && i + 1 < static_cast<size_t>(argc)) {
+        if (arg == "--install-service" && i + 1 < static_cast<int>(argc)) {
             args.scan_path = PathUtils::utf8_to_wide(argv[i+1]);
             args.command = CliCommand::InstallService;
         } else if (arg == "--uninstall-service") {
@@ -71,12 +82,18 @@ ServiceArgs parse_args(int argc, char** argv) {
     return args;
 }
 
-bool install_service(const wchar_t* exe_path, const wchar_t*) {
-    std::wstring full_exe_path = (exe_path && *exe_path) ? exe_path : []() {
+bool install_service(const wchar_t* exe_path) {
+    std::wstring full_exe_path;
+    if (exe_path && *exe_path) {
+        full_exe_path = exe_path;
+    } else {
         wchar_t sz[MAX_PATH];
-        if (GetModuleFileNameW(nullptr, sz, ARRAYSIZE(sz))) return std::wstring(sz);
-        return L"dupecheck.exe";
-    }();
+        if (GetModuleFileNameW(nullptr, sz, ARRAYSIZE(sz))) {
+            full_exe_path = sz;
+        } else {
+            full_exe_path = L"dupecheck.exe";
+        }
+    }
 
     SC_HANDLE sch = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
     if (!sch) return false;

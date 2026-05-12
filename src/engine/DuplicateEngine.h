@@ -16,7 +16,6 @@ struct DuplicateGroup {
     std::string label;
 };
 
-/// Deduplicate groups by removing files that already appear in a higher-priority group.
 std::vector<DuplicateGroup> deduplicate_groups(std::vector<DuplicateGroup>&& groups);
 
 class DuplicateEngine {

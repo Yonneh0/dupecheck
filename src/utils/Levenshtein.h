@@ -3,6 +3,14 @@
 #include <algorithm>
 #include <vector>
 
+// Prevent Windows min/max macro from conflicting with std::min/std::max
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 /// Compute Levenshtein edit distance between two strings (works with both std::string and std::wstring).
 template<typename StringT>
 inline int levenshtein_distance(const StringT& a, const StringT& b) {

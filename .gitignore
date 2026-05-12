@@ -1,0 +1,33 @@
+# Build outputs
+build/
+
+# CMake files generated during build
+CMakeCache.txt
+cmake_install.cmake
+
+# Compiled objects and executables
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+
+# Visual Studio
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.user
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# SQLite database (user data)
+**/*.db
+
+# Settings (user-specific)
+**/settings.json
+
+# Dependencies archives (large files, can be re-downloaded)
+external/*.zip

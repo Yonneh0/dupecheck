@@ -5,11 +5,7 @@
 #include <array>
 #include <cstdint>
 
-/// Offset from FILETIME epoch (Jan 1, 1601) to Unix epoch (Jan 1, 1970) in seconds.
-/// FILETIME is measured in 100-nanosecond intervals since Jan 1, 1601; dividing by 10,000,000 converts to seconds.
 constexpr long long EPOCH_OFFSET = 13477420800LL;
-
-/// Read buffer size for hashing I/O — 64 KB is optimal for sequential file reads on Windows.
 constexpr size_t HASH_BUFFER_SIZE = 65536;
 
 using Sha256 = std::array<uint8_t, 32>;
@@ -20,7 +16,6 @@ struct HashResult {
     Sha256 sha256{};
 };
 
-/// File metadata used throughout the application.
 struct FileInfo {
     std::wstring path;
     uint64_t size = 0;
@@ -51,7 +46,6 @@ inline std::string wide_to_utf8(const std::wstring& w) {
     return result;
 }
 
-/// Convert to Windows long path format (\\?\ prefix) for paths >260 chars.
 inline std::wstring to_long_path(const std::wstring& p) {
     if (p.length() > 260 && p.substr(0, 4) != L"\\\\?\\") {
         return L"\\\\?\\" + p;
@@ -77,7 +71,6 @@ inline std::wstring get_parent_dir(const std::wstring& path) {
     return p.wstring();
 }
 
-/// Check whether the given path refers to a file.
 inline bool is_file(const std::wstring& path) {
     DWORD attrs = GetFileAttributesW(to_long_path(path).c_str());
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0);
@@ -100,7 +93,6 @@ inline long long get_file_mtime(const std::wstring& path) {
     return static_cast<long long>(ft.QuadPart / 10000000) - EPOCH_OFFSET;
 }
 
-/// Recursively enumerate all files under `dir`, appending them to `out`.
 inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out) {
     if (dir.empty()) return;
 

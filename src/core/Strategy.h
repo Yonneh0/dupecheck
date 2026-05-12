@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <string>
 
 enum class Strategy : uint32_t {
     ExactMatch = 1,
@@ -10,10 +9,12 @@ enum class Strategy : uint32_t {
     FolderCopy = 16,
 };
 
+constexpr uint32_t ALL_STRATEGIES = 0x1F;
+
 struct StrategyConfig {
-    int name_similarity_threshold = 3;   // Levenshtein distance for name-variant detection.
-    uint32_t hash_tolerance = 1024;      // XxHash32 bin size (bytes) for similarity grouping.
-};  // service_enabled removed (unused)
+    int name_similarity_threshold = 3;
+    uint32_t hash_tolerance = 1024;
+};
 
 inline const char* strategy_to_string(Strategy s) {
     switch (s) {
