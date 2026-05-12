@@ -2,20 +2,16 @@
 #include <windows.h>
 #include "../hashing/HashEngine.h"
 
-static void service_do_scan(const std::wstring& scan_path) {
-    std::vector<PathUtils::FileInfo> entries;
-    PathUtils::enumerate_files(scan_path, entries);
-    for (auto& entry : entries) {
-        HashEngine::compute(entry.path.c_str());
-    }
+inline static std::vector<PathUtils::FileInfo>& get_entries() {
+    static std::vector<PathUtils::FileInfo> entries;
+    return entries;
 }
 
-static SERVICE_STATUS get_status(bool running) {
-    SERVICE_STATUS ss{};
-    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    ss.dwCurrentState = running ? SERVICE_RUNNING : SERVICE_STOPPED;
-    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
-    return ss;
+static void service_do_scan(const std::wstring& scan_path) {
+    PathUtils::enumerate_files(scan_path, get_entries());
+    for (auto& entry : get_entries()) {
+        HashEngine::compute(entry.path.c_str());
+    }
 }
 
 void ServiceHost::run_service(const std::wstring& scan_path, int interval_seconds) {
@@ -57,13 +53,21 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
     SetServiceStatus(h_service_status_, &ss);
 }
 
+static SERVICE_STATUS get_status(bool running) {
+    SERVICE_STATUS ss{};
+    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+    ss.dwCurrentState = running ? SERVICE_RUNNING : SERVICE_STOPPED;
+    ss.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    return ss;
+}
+
 ServiceArgs parse_args(int argc, char** argv) {
     ServiceArgs args;
     if (argc < 1) return args;
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
         if (arg == "--install-service" && i + 1 < static_cast<size_t>(argc)) {
-            args.scan_path = argv[i+1];
+            args.scan_path = PathUtils::utf8_to_wide(argv[i+1]);
             args.command = CliCommand::InstallService;
         } else if (arg == "--uninstall-service") {
             args.command = CliCommand::UninstallService;

@@ -5,6 +5,25 @@
 #include "../scanner/CachedScannerService.h"
 #include "../hashing/HashEngine.h"
 
+std::wstring get_default_db_path() {
+    wchar_t appdata[MAX_PATH];
+    DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
+    std::wstring db_path;
+    if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(appdata))) {
+        db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
+    } else {
+        const wchar_t* env = _wgetenv(L"APPDATA");
+        db_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\dupecheck.db";
+    }
+
+    auto dir_pos = db_path.find_last_of(L'\\');
+    if (dir_pos != std::wstring::npos) {
+        CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
+    }
+
+    return db_path;
+}
+
 bool ImGuiView::init(HINSTANCE hInstance, int nCmdShow) {
     HICON hIcon = LoadIcon(hInstance, IDI_APPLICATION);
     HCURSOR hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -30,21 +49,7 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
 
     if (!hwnd) return 1;
 
-    // Initialize database.
-    wchar_t appdata[MAX_PATH];
-    DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
-    std::wstring db_path;
-    if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(appdata))) {
-        db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
-    } else {
-        const wchar_t* env = _wgetenv(L"APPDATA");
-        db_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\dupecheck.db";
-    }
-
-    auto dir_pos = db_path.find_last_of(L'\\');
-    if (dir_pos != std::wstring::npos) {
-        CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
-    }
+    std::wstring db_path = get_default_db_path();
 
     DatabaseManager db(db_path);
     if (!db.init()) {
@@ -53,11 +58,8 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
     }
 
     s_db_ = &db;
-
-    // Initialize hashing.
     HashEngine::init_bcrypt();
 
-    // Setup ImGui.
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -81,8 +83,7 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
 
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("DupeCheck")) {
-            // Path input.
-            if (ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), sizeof(path_buf) / sizeof(wchar_t))) {
+            if (ImGui::InputTextW(L"##path", path_buf, ARRAYSIZE(path_buf))) {
                 CachedScannerService scanner(path_buf);
                 if (scanner.init()) {
                     auto cached_files = scanner.scan(path_buf);
@@ -90,7 +91,7 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
                     results_ = engine.find_duplicates(cached_files, 0x1F);
 
                     int64_t path_hash = 0;
-                    for (char c : PathUtils::wide_to_utf8(path_buf)) {
+                    for (wchar_t c : path_buf) {
                         path_hash += static_cast<int64_t>(c);
                     }
                     db.save_session(path_hash, static_cast<int>(cached_files.size()),
@@ -107,7 +108,6 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
                 }
             }
 
-            // Render duplicate groups.
             for (const auto& group : results_) {
                 bool open = ImGui::TreeNodeEx(
                     static_cast<const void*>(&group),
@@ -124,7 +124,6 @@ int run_gui(HINSTANCE hInstance, int nCmdShow, const std::wstring& default_path)
                 }
             }
 
-            // Action buttons.
             if (ImGui::Button("Apply All")) {
                 auto items = OrganizationSvc::generate_actions(results_, ActionType::Rename);
                 OrganizationSvc::apply(items);

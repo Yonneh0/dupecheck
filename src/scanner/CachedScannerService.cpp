@@ -1,22 +1,23 @@
 #include "CachedScannerService.h"
 #include "../hashing/HashEngine.h"
 
-CachedScannerService::CachedScannerService(const std::wstring& db_path) : cache_(db_path) {}
+CachedScannerService::CachedScannerService(const std::wstring& db_path, const std::wstring& cache_db_path)
+    : manager_(db_path), cache_db_(cache_db_path) {}
 
-bool CachedScannerService::init() { return cache_.init(); }
+bool CachedScannerService::init() { return manager_.init(); }
 
 std::vector<FileInfo> CachedScannerService::scan(const wchar_t* path) {
+    auto cached = manager_.get_cached_files();
+
     std::vector<PathUtils::FileInfo> current_entries;
     PathUtils::enumerate_files(path, current_entries);
-
-    auto cached = cache_.get_cached_files();
 
     // Remove files that no longer exist.
     std::vector<std::wstring> current_paths(current_entries.size());
     for (size_t i = 0; i < current_entries.size(); ++i) {
         current_paths[i] = current_entries[i].path;
     }
-    cache_.remove_deleted_files(current_paths);
+    manager_.remove_deleted_files(current_paths);
 
     // Merge cached and new entries.
     std::vector<FileInfo> results;
@@ -32,7 +33,7 @@ std::vector<FileInfo> CachedScannerService::scan(const wchar_t* path) {
         if (!found) {
             HashResult hr = HashEngine::compute(entry.path.c_str());
             FileInfo fi{entry.path, entry.size, entry.mtime, hr.xxhash, hr.sha256};
-            cache_.upsert_file(fi, static_cast<long long>(std::time(nullptr)));
+            manager_.upsert_file(fi, static_cast<long long>(std::time(nullptr)));
             results.push_back(std::move(fi));
         }
     }

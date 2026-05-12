@@ -4,7 +4,15 @@
 #include "hashing/HashEngine.h"
 #include "service/ServiceHost.h"
 
-// Entry point: either runs the GUI or a CLI service.
+static void initialize_database() {
+    std::wstring db_path = get_default_db_path();
+    DatabaseManager db(db_path);
+    if (!db.init()) {
+        MessageBoxW(nullptr, L"Failed to initialize database.", L"Error", MB_ICONERROR);
+        exit(1);
+    }
+}
+
 int main() {
     HashEngine::init_bcrypt();
 
@@ -31,34 +39,11 @@ int main() {
             break;
         }
         default: {
-            // Run GUI.
-            wchar_t appdata[MAX_PATH];
-            DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
-            std::wstring db_path;
-            if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(appdata))) {
-                db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
-            } else {
-                const wchar_t* env = _wgetenv(L"APPDATA");
-                db_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\dupecheck.db";
-            }
-
-            auto dir_pos = db_path.find_last_of(L'\\');
-            if (dir_pos != std::wstring::npos) {
-                CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
-            }
-
-            DatabaseManager db(db_path);
-            if (!db.init()) {
-                MessageBoxW(nullptr, L"Failed to initialize database.", L"Error", MB_ICONERROR);
-                return 1;
-            }
-
-            // Initialize ImGui GUI.
+            initialize_database();
             HINSTANCE hInst = GetModuleHandle(nullptr);
-            run_gui(hInst, SW_SHOWDEFAULT, PathUtils::utf8_to_wide(L"C:\\"));
-
+            run_gui(hInst, SW_SHOWDEFAULT, L"C:\\");
             HashEngine::cleanup();
-            break;
+            return 0;
         }
     }
 

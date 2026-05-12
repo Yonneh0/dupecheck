@@ -1,13 +1,12 @@
 #pragma once
 #include <string>
+#include <vector>
+#include "../core/ActionModel.h"
+#include "../core/FileInfo.h"
 
 // Windows Service for periodic duplicate scanning.
 constexpr const wchar_t* SERVICE_NAME = L"DupeCheck";
 constexpr const wchar_t* DISPLAY_NAME = L"DupeCheck Duplicate File Scanner";
-
-enum class CliCommand { None, InstallService, UninstallService, RunService };
-
-struct ServiceArgs { std::string scan_path; bool installed = false; CliCommand command = CliCommand::None };
 
 class ServiceHost {
 public:

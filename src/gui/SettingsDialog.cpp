@@ -3,9 +3,6 @@
 #include "SettingsDialog.h"
 #include "../utils/JsonConfig.h"
 
-// Global scan path variable used throughout the app.
-std::wstring g_scan_path;
-
 StrategyConfig& get_strategy_config() {
     static StrategyConfig config{3, 1024};
     return config;
@@ -23,7 +20,8 @@ void render_settings_dialog() {
         ImGui::SliderInt("Name Similarity Threshold", &threshold, 0, 10);
         ImGui::SliderInt("Hash Tolerance (bytes)", static_cast<int*>(&tolerance), 256, 4096);
 
-        SYSTEM_INFO info{}; GetSystemInfo(&info);
+        SYSTEM_INFO info{};
+        GetSystemInfo(&info);
         int hasher_count = static_cast<int>(std::max(1, static_cast<int>(info.dwNumberOfProcessors) - 1));
         ImGui::SliderInt("Max Concurrent Hashers", &hasher_count, 1, std::max(1, info.dwNumberOfProcessors - 1));
 

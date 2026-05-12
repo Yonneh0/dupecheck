@@ -1,10 +1,12 @@
 #pragma once
 #include <windows.h>
+#include <string>
 #include <vector>
 #include "../engine/DuplicateEngine.h"
 #include "../database/DatabaseManager.h"
 
-// Main ImGui-based GUI for the duplicate finder application.
+std::wstring get_default_db_path();
+
 class ImGuiView {
 public:
     static bool init(HINSTANCE hInstance, int nCmdShow);
