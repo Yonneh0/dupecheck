@@ -13,7 +13,7 @@ DupeCheck is a C++20 Windows application that finds duplicate files across folde
 | Language | C++20, C17 |
 | Build System | CMake 3.24+ |
 | GUI | ImGui + Dear ImGui Win32 backend |
-| Hashing | Local XxHash32 (`src/hashing/xxhash.c`), Windows native SHA256 via Bcrypt API |
+| Hashing | Local XxHash32 (`src/hashing/xxhash.cpp`), Windows native SHA256 via Bcrypt API |
 | Database | sqlite3 with WAL mode for multi-process concurrency |
 | Service | Native Windows Service API, named pipe IPC |
 
@@ -33,7 +33,7 @@ DupeCheck is a C++20 Windows application that finds duplicate files across folde
 │  ┌──────▼──────────────────────▼────────────┐ │
 │  │          Core Library                     │ │
 │  │  ┌────────────┐ ┌────────────────────┐    │ │
-│  │  │ FileScanner│ │ CachedScannerSvc   │    │ │
+│  │  │ FileScanner│ │ CachedDatabase     │    │ │
 │  │  │ (enumerate,│ │ (SQLite cache)      │    │ │
 │  │  │  XxHash32) │ └────────┬───────────┘    │ │
 │  │  └────┬───────┘          │                │ │
@@ -61,7 +61,7 @@ SQLite DB: %APPDATA%\DupeCheck\dupecheck.db (WAL mode)
 struct FileInfo {
     std::wstring path;      // Full file path
     uint64_t size;          // Bytes
-    long long mtime;        // Seconds since epoch
+    long long mtime;        // Seconds since epoch (adjusted from FILETIME)
     XxHash32 xxhash;        // Tier-1 hash
     Sha256 sha256;          // Tier-2 hash
 };
@@ -135,77 +135,83 @@ CREATE INDEX IF NOT EXISTS idx_action_session ON action_history(session_id);
 
 ---
 
-## Project Structure
+## Project Structure (Updated)
 
 ```
 dupecheck/
 ├── CMakeLists.txt            # Top-level build configuration
-├── README.md                 # User-facing documentation
 │
-├── external/                 # External dependencies (bundled)
+├── external/                 # External dependencies (bundled, expect unzip before build)
 │   ├── imgui/               # Dear ImGui source + Win32 backend
 │   └── sqlite3/             # SQLite amalgamation
 │
 ├── src/
 │   ├── main.cpp             # Entry point: CLI args → GUI or service
-│   ├── cli.cpp              # Command-line argument parsing
+│   ├── cli.cpp              # Command-line argument parsing (--install-service, etc.)
 │   │
-│   ├── core/                # Core types
-│   │   ├── ActionModel.h    # FileType, ActionType, ActionItem, ActionHistoryEntry
-│   │   ├── FileInfo.h       # FileInfo struct + PathUtils namespace
+│   ├── core/                # Core type definitions
+│   │   ├── ActionModel.h    # DuplicateGroup + folder_copy (delegates to FolderCopy)
+│   │   ├── FileInfo.h       # FileInfo struct + PathUtils namespace (enumerate_files)
 │   │   └── Strategy.h       # Strategy enum + StrategyConfig
 │   │
 │   ├── hashing/             # Multi-tier hashing engine
 │   │   ├── xxhash/          # Local XxHash32 implementation
-│   │   ├── HashEngine.{h,cpp}  # Single-pass SHA256+XxHash, batch compute
+│   │   ├── HashEngine.{h,cpp}  # Single-pass SHA256+XxHash, batch compute (ThreadPool)
 │   │   └── ThreadPool.cpp   # Thread pool for parallel hashing
 │   │
 │   ├── scanner/             # File enumeration & caching
-│   │   ├── FileScanner.{h,cpp}     # Recursive traversal + single-file hashing
-│   │   └── CachedScannerService.{h,cpp}  # SQLite-backed incremental scanning
+│   │   ├── CachedDatabase.{h,cpp}    # SQLite cache layer (shared by both scanners)
+│   │   ├── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
+│   │   └── FileScanner.{h,cpp}       # Legacy scanner — delegates to CachedDatabase
 │   │
-│   ├── engine/              # Duplicate detection strategies (one per file)
-│   │   ├── DuplicateEngine.{h,cpp}  # Strategy dispatching & result merging
-│   │   ├── ExactMatch.h     SHA256 match
-│   │   ├── NameVariant.h    Levenshtein name similarity
-│   │   ├── SizeHashSimilar.h XxHash binning
-│   │   ├── ExtensionFamily.h  Extension family mapping
-│   │   └── FolderCopy.h     Directory tree hashing
+│   ├── engine/              # Duplicate detection strategies (inline headers)
+│   │   ├── DuplicateEngine.{h,cpp}    # Strategy dispatching & result merging
+│   │   ├── ExactMatch.h               SHA256 match
+│   │   ├── NameVariant.h              Levenshtein name similarity
+│   │   ├── SizeHashSimilar.h          XxHash binning
+│   │   ├── ExtensionFamily.h          Extension family mapping
+│   │   └── FolderCopy.h               Directory tree hashing (compute_tree_hash)
 │   │
 │   ├── organization/        # Batch actions on duplicate groups
-│   │   ├── OrganizationSvc.{h,cpp}  # Main action orchestration (rename, move, delete)
-│   │   ├── RenameAction.h       Lightweight rename helper
-│   │   ├── MoveAction.h         Lightweight move helper
-│   │   ├── DeleteAction.h       Lightweight delete helper
-│   │   ├── SymlinkAction.h      Symlink creation/undo
-│   │   ├── ArchiveAction.h      Archive/zip duplicates
-│   │   └── UndoManager.h        History stack for undo support
+│   │   ├── OrganizationSvc.{h,cpp}    # Main action orchestration (rename, move, delete)
+│   │   ├── RenameAction.h             Lightweight rename helper
+│   │   ├── MoveAction.h               Lightweight move helper
+│   │   ├── DeleteAction.h             Lightweight delete helper
+│   │   ├── SymlinkAction.h            Symlink creation/undo
+│   │   ├── ArchiveAction.h            Archive/zip duplicates
+│   │   └── UndoManager.h              History stack for undo support
 │   │
-│   ├── database/          # SQLite persistence layer
-│   │   └── DatabaseManager.{h,cpp}  Schema, CRUD operations, WAL mode
+│   ├── database/            # SQLite persistence layer
+│   │   └── DatabaseManager.{h,cpp}    Schema, CRUD operations, WAL mode
 │   │
-│   ├── service/           # Windows Service + IPC
-│   │   ├── ServiceHost.{h,cpp}  Service registration & lifecycle
-│   │   └── NamedPipeServer.{h,cpp}  IPC pipe for GUI ↔ service
+│   ├── service/             # Windows Service + IPC
+│   │   ├── ServiceHost.{h,cpp}        Service registration & lifecycle
+│   │   └── NamedPipeServer.{h,cpp}    IPC pipe for GUI ↔ service
 │   │
-│   ├── gui/               # ImGui-based user interface (Win32 backend)
-│   │   ├── Controls.cpp     Path input, scan/browse buttons
+│   ├── gui/                 # ImGui-based user interface (Win32 backend)
+│   │   ├── Controls.cpp       Path input, scan/browse buttons
 │   │   ├── PreviewPanel.{h,cpp}  Action preview widget per group
 │   │   └── SettingsDialog.{h,cpp}  Modal settings dialog
 │   │
-│   └── utils/             # Shared utilities
-│       ├── JsonConfig.{h,cpp}     Lightweight JSON config reader/writer
-│       ├── Levenshtein.h          Templated edit-distance algorithm
-│       └── ExtensionFamilyMap.h   Built-in extension family mappings
+│   └── utils/               # Shared utilities
+│       ├── JsonConfig.{h,cpp}    Lightweight JSON config reader/writer
+│       ├── Levenshtein.h         Templated edit-distance algorithm
+│       └── ExtensionFamilyMap.h  Built-in extension family mappings
 │
-├── resources/             # Application resources
-│   └── appicon.ico        Windows icon resource
-│
-└── tests/                 # Unit tests (standalone)
+├── resources/              # Application resources
+│   └── appicon.ico         Windows icon resource
 ```
 
 ---
 
-## Completed Phases
+## Key Design Decisions
 
-Foundation ✅ | Hashing Engine ✅ (single-pass streaming API) | Scanner & Caching ✅ (WAL mode, upsert/delete) | Duplicate Detection ✅ (all five strategies as inline headers) | Organization Actions ✅ | GUI ✅ (Win32 + ImGui) | Service ✅ (simplified host with named pipe IPC)
+1. **Single-pass hashing**: `HashEngine::compute()` streams through the file once, computing both XxHash32 and SHA256 simultaneously — no double I/O needed.
+
+2. **CachedDatabase** is a single shared class (not duplicated) used by both `CachedScannerService` and `FileScanner`. This eliminates the previous triple-duplication across files.
+
+3. **folder_copy / compute_tree_hash** are defined once in `FolderCopy.h`; `ActionModel.h` delegates to them via inline wrappers.
+
+4. **ThreadPool** is defined locally in `HashEngine.cpp` (not a separate file) and provides parallel batch execution via worker threads. The legacy `.submit().then()` API remains available for future use.
+
+5. **WAL mode**: All SQLite databases use Write-Ahead Logging for concurrent read/write access across GUI and service processes.

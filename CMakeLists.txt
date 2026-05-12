@@ -11,7 +11,7 @@ if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8)
 endif()
 
-# ── External dependencies (bundled) ───────────────────────────────
+# ── External dependencies (bundled, expect unzip before build) ───────────
 add_library(xxhash STATIC src/hashing/xxhash/xxhash.cpp)
 target_include_directories(xxhash PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -39,10 +39,10 @@ add_executable(dupecheck WIN32 src/main.cpp src/cli.cpp)
 target_link_libraries(dupecheck PRIVATE dupecheck_core)
 set_target_properties(dupecheck PROPERTIES OUTPUT_NAME "DupeCheck")
 
-# ── Windows service binary (console subsystem) ────────────────────
-add_executable(dupecheck_service WIN32 src/service/ServiceHost.cpp src/cli.cpp)
-target_link_libraries(dupecheck_service PRIVATE dupecheck_core msvcrt advapi32 kernel32 user32 gdi32)
-set_target_properties(dupecheck_service PROPERTIES OUTPUT_NAME "DupeCheckService")
+# ── Windows service binary (console subsystem for CLI) ───────────────
+add_executable(dupeservice CONSOLE src/service/ServiceHost.cpp src/cli.cpp)
+target_link_libraries(dupeservice PRIVATE dupecheck_core msvcrt advapi32 kernel32 user32 gdi32)
+set_target_properties(dupeservice PROPERTIES OUTPUT_NAME "DupeCheckService")
 
 # ── Application icon (optional) ───────────────────────────────────
 if(EXISTS resources/appicon.ico)

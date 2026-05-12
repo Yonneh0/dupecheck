@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <vector>
 #include "../engine/DuplicateEngine.h"
+#include "../database/DatabaseManager.h"
 
 // Main ImGui-based GUI for the duplicate finder application.
 class ImGuiView {

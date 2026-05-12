@@ -22,14 +22,10 @@ void render_controls(std::wstring& scan_path) {
     if (!scan_path.empty()) wcscpy_s(path_buf, scan_path.c_str());
     else path_buf[0] = L'\0';
 
-    if (ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), sizeof(path_buf))) {
+    // InputText expects character count, not bytes.
+    if (ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), static_cast<int>(sizeof(path_buf) / sizeof(wchar_t)))) {
         scan_path.assign(path_buf);
     }
     ImGui::SameLine();
     if (ImGui::Button("Browse")) browse_for_folder(scan_path);
-    ImGui::SameLine();
-    if (ImGui::Button("Scan", ImVec2(100, 30))) {
-        // Trigger a scan with current path.
-        (void)scan_path;
-    }
 }

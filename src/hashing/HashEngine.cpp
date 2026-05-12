@@ -1,85 +1,93 @@
 #include "HashEngine.h"
+#include <future>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+#include <queue>
+#include <atomic>
 
-static NTSTATUS init_sha256_provider(BCRYPT_ALG_HANDLE& hAlg) {
-    return BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
-}
+// ThreadPool — work-queue based parallel executor.
+class ThreadPool {
+public:
+    explicit ThreadPool(int num_threads) {
+        if (num_threads <= 0) {
+            SYSTEM_INFO info;
+            GetSystemInfo(&info);
+            num_threads = static_cast<int>(info.dwNumberOfProcessors);
+        }
 
-void HashEngine::init_bcrypt() {
-    std::call_once(s_init_flag, []() {
-        NTSTATUS status = init_sha256_provider(g_bcrypt_alg_);
-        s_initialized = (status == ERROR_SUCCESS);
-    });
-}
-
-void HashEngine::cleanup() {
-    if (g_bcrypt_alg_) {
-        BCryptCloseAlgorithmProvider(g_bcrypt_alg_, 0);
-        g_bcrypt_alg_ = nullptr;
-    }
-    s_initialized = false;
-}
-
-HashResult HashEngine::compute(const wchar_t* path) {
-    HashResult result{};
-
-    HANDLE hFile = CreateFileW(
-        PathUtils::to_long_path(path).c_str(),
-        GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-
-    if (hFile == INVALID_HANDLE_VALUE) return result;
-
-    LARGE_INTEGER fileSize{};
-    GetFileSizeEx(hFile, &fileSize);
-    uint64_t total_bytes = static_cast<uint64_t>(fileSize.QuadPart);
-
-    BCRYPT_HASH_HANDLE hSha256{};
-    NTSTATUS status = BCryptCreateHash(g_bcrypt_alg_, &hSha256, nullptr, 0, nullptr, 0, 0);
-    if (status != ERROR_SUCCESS) {
-        CloseHandle(hFile);
-        return result;
+        for (int i = 0; i < num_threads; ++i) {
+            workers_.emplace_back([this]() { worker_loop(); });
+        }
     }
 
-    uint32_t xxhash_state = 0;
-    char buffer[HASH_BUFFER_SIZE]{};
-
-    while (total_bytes > 0) {
-        DWORD bytes_to_read = static_cast<DWORD>(std::min(HASH_BUFFER_SIZE, total_bytes));
-        DWORD bytesRead = 0;
-        if (!ReadFile(hFile, buffer, bytes_to_read, &bytesRead, nullptr)) break;
-        if (bytesRead == 0) break;
-
-        xxhash_state = XXH32(buffer, bytesRead, xxhash_state);
-        BCryptHashData(hSha256, reinterpret_cast<uint8_t*>(buffer), bytesRead, 0);
-
-        total_bytes -= bytesRead;
+    ~ThreadPool() {
+        stop_ = true;
+        cv_.notify_all();
+        for (auto& w : workers_) {
+            if (w.joinable()) w.join();
+        }
     }
 
-    result.xxhash = xxhash_state;
-    BCryptFinishHash(hSha256, result.sha256.data(), static_cast<DWORD>(result.sha256.size()), 0);
-    BCryptDestroyHash(hSha256);
-    CloseHandle(hFile);
+    void worker_loop() {
+        while (true) {
+            std::function<void()> task;
+            bool has_task = false;
+            {
+                std::unique_lock<std::mutex> lock(queue_mutex_);
+                cv_.wait(lock, [this]() { return stop_ || !tasks_.empty(); });
+                if (stop_ && tasks_.empty()) return;
+                task = std::move(tasks_.front());
+                tasks_.pop();
+            }
 
-    return result;
-}
+            try { task(); } catch (...) {}
 
-void HashEngine::compute_batch(const std::vector<std::wstring>& paths,
-                               std::vector<HashResult>& out) {
+            {
+                std::lock_guard<std::mutex> lock(active_mutex_);
+                if (--active_tasks_ == 0) done_cv_.notify_one();
+            }
+        }
+    }
+
+    // Block until all submitted tasks complete.
+    void wait_all() {
+        while (true) {
+            std::unique_lock<std::mutex> lock(queue_mutex_);
+            if (tasks_.empty() && active_tasks_ == 0) return;
+            done_cv_.wait_for(lock, std::chrono::milliseconds(50));
+        }
+    }
+
+private:
+    std::vector<std::thread> workers_;
+    std::queue<std::function<void()>> tasks_;
+    std::mutex queue_mutex_;
+    std::condition_variable cv_;
+    int active_tasks_ = 0;
+    std::atomic<bool> stop_{false};
+    std::mutex active_mutex_;
+    std::condition_variable done_cv_;
+};
+
+void HashEngine::compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out) {
     init_bcrypt();
 
     SYSTEM_INFO info{};
     GetSystemInfo(&info);
-    int num_threads = (info.dwNumberOfProcessors > 0) ?
-        static_cast<int>(info.dwNumberOfProcessors - 1) : 3;
+    int num_threads = (info.dwNumberOfProcessors > 0) ? static_cast<int>(info.dwNumberOfProcessors - 1) : 3;
 
-    ThreadPool pool(std::max(1, num_threads));
+    // Use std::async for true parallel execution.
+    std::vector<std::future<HashResult>> futures(paths.size());
     out.resize(paths.size());
 
     for (size_t i = 0; i < paths.size(); ++i) {
         const auto& p = paths[i];
-        pool.submit([this, &p]() -> HashResult { return compute(p.c_str()); })
-            .then([&, idx = i](auto&& future) mutable { out[idx] = future.get(); });
+        futures[i] = std::async(std::launch::async, [&p]() -> HashResult { return compute(p.c_str()); });
     }
 
-    pool.wait_all();
+    for (size_t i = 0; i < paths.size(); ++i) {
+        out[i] = futures[i].get();
+    }
 }

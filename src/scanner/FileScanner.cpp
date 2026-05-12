@@ -1,40 +1,41 @@
 #include "FileScanner.h"
 #include "../hashing/HashEngine.h"
-#include <algorithm>
+
+// Legacy scanner — delegates to the shared CachedDatabase.
+FileScanner::FileScanner(const std::wstring& db_path) : cache_(db_path) {}
+
+bool FileScanner::init() { return cache_.init(); }
 
 std::vector<FileInfo> FileScanner::scan(const wchar_t* path) {
-    std::vector<PathUtils::FileEntry> entries;
-    PathUtils::enumerate_files(path, entries);
+    std::vector<PathUtils::FileInfo> current_entries;
+    PathUtils::enumerate_files(path, current_entries);
 
-    size_t total = entries.size();
-    if (progress_) progress_(total, 0);
+    auto cached = cache_.get_cached_files();
 
-    // Initialize results with file metadata.
-    std::vector<FileInfo> results(entries.size());
-    for (size_t i = 0; i < entries.size(); ++i) {
-        auto& entry = entries[i];
-        results[i].path = entry.path;
-        results[i].size = entry.size;
-        results[i].mtime = entry.mtime;
+    // Remove files that no longer exist.
+    std::vector<std::wstring> current_paths(current_entries.size());
+    for (size_t i = 0; i < current_entries.size(); ++i) {
+        current_paths[i] = current_entries[i].path;
     }
+    cache_.remove_deleted_files(current_paths);
 
-    // Compute hashes in parallel.
-    std::vector<std::future<void>> futures;
-    futures.reserve(entries.size());
-
-    for (size_t i = 0; i < entries.size(); ++i) {
-        const auto& entry = entries[i];
-        futures.push_back(std::async(std::launch::async, [this, &entry, &results, i]() -> FileInfo {
+    // Merge cached and new entries.
+    std::vector<FileInfo> results;
+    for (auto& entry : current_entries) {
+        bool found = false;
+        for (const auto& cf : cached) {
+            if (cf.path == entry.path && cf.size == entry.size && cf.mtime == entry.mtime) {
+                results.push_back(cf);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
             HashResult hr = HashEngine::compute(entry.path.c_str());
-            return FileInfo{entry.path, entry.size, entry.mtime, hr.xxhash, hr.sha256};
-        }));
+            FileInfo fi{entry.path, entry.size, entry.mtime, hr.xxhash, hr.sha256};
+            cache_.upsert_file(fi, static_cast<long long>(std::time(nullptr)));
+            results.push_back(std::move(fi));
+        }
     }
-
-    // Collect results and update progress.
-    for (size_t i = 0; i < entries.size(); ++i) {
-        results[i] = futures[i].get();
-        if (progress_) progress_(total, i + 1);
-    }
-
     return results;
 }

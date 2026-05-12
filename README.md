@@ -15,14 +15,14 @@ A fast duplicate file finder for Windows built with C++20. Scans folders and dri
 
 - **Batch organization actions:** rename with suffixes, move to duplicate folders, delete copies, create symlinks, or archive duplicates. Full undo support.
 
-- **High-performance parallel hashing** — computes XxHash32 and SHA256 in a single I/O pass using multi-threaded workers.
+- **High-performance parallel hashing** — computes XxHash32 and SHA256 in a single I/O pass using multi-threaded workers (ThreadPool).
 
 ## Building
 
 ### Prerequisites
 - CMake 3.24+
 - MSVC (Visual Studio 2019+) with Windows SDK
-- External dependencies: ImGui, SQLite bundled in the `external/` directory.
+- External dependencies: unzip ImGui and SQLite into `external/imgui/` and `external/sqlite3/`.
 
 ### Quick Start
 ```bash
@@ -69,7 +69,7 @@ The settings file is stored at `%APPDATA%\DupeCheck\settings.json`:
 dupecheck/
 ├── CMakeLists.txt                  # Top-level build configuration
 ├── README.md                       # This file
-├── external/                       # External dependencies (ImGui, SQLite)
+├── external/                       # External dependencies (ImGui, SQLite; unzip before build)
 │   ├── imgui/                      # Dear ImGui source files + Win32 backend
 │   └── sqlite3/                    # SQLite amalgamation
 ├── src/
@@ -83,20 +83,21 @@ dupecheck/
 │   │
 │   ├── hashing/                    # Multi-tier hashing engine
 │   │   ├── xxhash/                 # Local XxHash32 implementation
-│   │   ├── HashEngine.{h,cpp}      # Single-pass SHA256+XxHash, batch compute
+│   │   ├── HashEngine.{h,cpp}      # Single-pass SHA256+XxHash, batch compute (ThreadPool)
 │   │   └── ThreadPool.cpp          # Thread pool with work queue
 │   │
 │   ├── scanner/                    # File enumeration & caching
-│   │   ├── FileScanner.{h,cpp}     # Recursive directory traversal + hashing
-│   │   └── CachedScannerService.{h,cpp}  # SQLite-backed incremental scanning
+│   │   ├── CachedDatabase.{h,cpp}  # SQLite cache layer (shared by both scanners)
+│   │   ├── CachedScannerService.{h,cpp}  # Primary scanner with incremental updates
+│   │   └── FileScanner.{h,cpp}     # Legacy scanner — delegates to CachedDatabase
 │   │
-│   ├── engine/                     # Duplicate detection strategies
+│   ├── engine/                     # Duplicate detection strategies (inline headers)
 │   │   ├── DuplicateEngine.{h,cpp} # Strategy dispatching & result merging
 │   │   ├── ExactMatch.h            SHA256 match
 │   │   ├── NameVariant.h           Levenshtein name similarity
 │   │   ├── SizeHashSimilar.h       Size + XxHash binning
 │   │   ├── ExtensionFamily.h       Extension family mapping
-│   │   └── FolderCopy.h            Directory tree hashing
+│   │   └── FolderCopy.h            Directory tree hashing (compute_tree_hash)
 │   │
 │   ├── organization/               # Batch actions on duplicate groups
 │   │   ├── OrganizationSvc.{h,cpp} # Main action orchestration (rename, move, delete)
@@ -126,9 +127,6 @@ dupecheck/
 │
 ├── resources/                      # Application resources
 │   └── appicon.ico                 Windows icon resource
-│
-└── tests/                          # Unit tests (standalone)
-```
 
 ## License
 
