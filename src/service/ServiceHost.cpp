@@ -69,13 +69,17 @@ ServiceArgs parse_args(int argc, char** argv) {
     if (argc < 1) return args;
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
-        if (arg == "--install-service" && i + 1 < static_cast<int>(argc)) {
+        if (arg == "--install-service" && i + 1 < argc) {
             args.scan_path = PathUtils::utf8_to_wide(argv[i+1]);
             args.command = CliCommand::InstallService;
+            ++i; // skip the path argument
         } else if (arg == "--uninstall-service") {
             args.command = CliCommand::UninstallService;
         } else if (arg == "--service") {
             args.command = CliCommand::RunService;
+        } else if (arg[0] != '-') {
+            // Treat bare arguments as scan paths
+            args.scan_path = PathUtils::utf8_to_wide(argv[i]);
         }
     }
     return args;

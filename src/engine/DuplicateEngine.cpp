@@ -1,5 +1,6 @@
 #include "DuplicateEngine.h"
 #include <algorithm>
+#include <unordered_set>
 
 static uint32_t strategy_priority(Strategy s) {
     switch (s) {

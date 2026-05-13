@@ -11,7 +11,7 @@ static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
     PathUtils::enumerate_files(dir_path, entries);
 
     if (entries.empty()) {
-        std::fill(out_hash.begin(), out_hash.end(), 0);
+        std::fill(out_hash.begin(), out_hash.end(), static_cast<uint8_t>(0));
         return;
     }
 
@@ -52,7 +52,7 @@ static void compute_tree_hash(const std::wstring& dir_path, Sha256& out_hash) {
 }
 
 inline std::vector<DuplicateGroup> folder_copy(const std::vector<std::wstring>& dirs) {
-    std::unordered_map<Sha256, std::vector<std::wstring>> hash_to_dirs;
+    std::unordered_map<Sha256, std::vector<std::wstring>, Sha256Hash> hash_to_dirs;
     for (const auto& d : dirs) {
         Sha256 h{};
         compute_tree_hash(d, h);

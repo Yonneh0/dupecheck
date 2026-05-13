@@ -4,7 +4,7 @@
 #include "../utils/ExtensionFamilyMap.h"
 
 inline std::vector<DuplicateGroup> extension_family(const std::vector<FileInfo>& files) {
-    std::unordered_map<std::array<uint8_t, 32>, std::vector<FileInfo>> sha_groups;
+    std::unordered_map<Sha256, std::vector<FileInfo>, Sha256Hash> sha_groups;
     for (const auto& f : files) sha_groups[f.sha256].push_back(f);
 
     std::vector<DuplicateGroup> groups;

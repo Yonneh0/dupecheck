@@ -4,10 +4,11 @@
 #include <vector>
 #include "../core/Strategy.h"
 #include "../database/DatabaseManager.h"
-#include "DuplicateEngine.h"
+#include "../engine/DuplicateEngine.h"
+#include "../utils/DbPath.h"
 
-// Database path used by GUI components (set at startup).
 inline std::wstring g_db_path = get_default_db_path();
+constexpr const wchar_t* WND_CLASS_NAME = L"DupeCheckWindow";
 
 class ImGuiView {
 public:
@@ -15,11 +16,12 @@ public:
     static void perform_scan(const wchar_t* path);
     static std::vector<DuplicateGroup> get_results();
     static void set_results(const std::vector<DuplicateGroup>& r) { results_ = r; }
+    static StrategyConfig& config() noexcept { return s_config_; }
+    static void set_db(DatabaseManager* db) { s_db_ = db; }
 
 private:
-    inline static const wchar_t* WND_CLASS_NAME = L"DupeCheck";
     inline static DatabaseManager* s_db_   = nullptr;
-    inline static StrategyConfig s_config{};
+    inline static StrategyConfig s_config_{};
     inline static std::vector<DuplicateGroup> results_;
 };
 

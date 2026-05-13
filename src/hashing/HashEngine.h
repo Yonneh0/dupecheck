@@ -1,8 +1,13 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <bcrypt.h>
+#include <mutex>
 #include <vector>
 #include "../core/FileInfo.h"
+#include "xxhash/xxhash.h"
 
 extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
 extern std::once_flag s_init_flag;

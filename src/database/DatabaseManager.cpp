@@ -12,6 +12,7 @@ CREATE INDEX IF NOT EXISTS idx_files_xxhash ON files(xxhash32);
 
 CREATE TABLE IF NOT EXISTS scan_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, path_hash BIGINT DEFAULT 0,
+    scan_path TEXT,
     created_at BIGINT DEFAULT (strftime('%s', 'now')),
     file_count INT, duplicate_count INT, strategy_flags INT
 );
@@ -118,8 +119,6 @@ bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& curr
 bool DatabaseManager::save_session(int64_t path_hash, const std::string& scan_path, int file_count, int duplicate_count, uint32_t strategy_flags) {
     const char* sql = "INSERT INTO scan_sessions (path_hash, scan_path, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, ?, strftime('%s', 'now'), ?, ?, ?)";
 
-    // Path hash is used to identify which directory was scanned. A value of 0 means
-    // the session record doesn't have a meaningful path association yet (e.g. during service startup).
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
 
@@ -148,7 +147,7 @@ bool DatabaseManager::record_action(int session_id, const std::wstring& file_pat
                                      const std::string& action_type,
                                      const std::string& old_value,
                                      const std::string& new_value) {
-    const char* sql = "INSERT INTO action_history (session_id, file_path, action_type, old_value, new_value, performed_at) VALUES (?, ?, ?, ?, strftime('%s', 'now'))";
+    const char* sql = "INSERT INTO action_history (session_id, file_path, action_type, old_value, new_value, performed_at) VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
 

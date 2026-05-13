@@ -14,7 +14,7 @@ static void perform_scan_impl(const wchar_t* path, DatabaseManager* db) {
     CachedScannerService scanner;
     if (scanner.init()) {
         auto cached_files = scanner.scan(path);
-        DuplicateEngine engine(ImGuiView::s_config);
+        DuplicateEngine engine(ImGuiView::config());
         std::vector<DuplicateGroup> result_groups = engine.find_duplicates(cached_files, ALL_STRATEGIES);
         ImGuiView::set_results(result_groups);
 
@@ -65,7 +65,7 @@ int run_gui([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] int nCmdShow,
         return 1;
     }
 
-    ImGuiView::s_db_ = &db;
+    ImGuiView::set_db(&db);
     HashEngine::init_bcrypt();
 
     ImGui::CreateContext();

@@ -23,13 +23,16 @@ public:
     /// Get a reference to the action history (for UI access).
     inline static std::vector<ActionHistoryEntry>& get_history() { return history_; }
 
-private:
-    static void redo_one_action(const ActionHistoryEntry& entry);
-    static void apply_actions(const std::vector<ActionItem>& items);
-
     /// Generate action items for a single duplicate group.
     static std::vector<ActionItem> generate_actions(const DuplicateGroup& group, ActionType action_type = ActionType::Rename);
 
     /// Generate action items for multiple duplicate groups.
     static std::vector<ActionItem> generate_actions(const std::vector<DuplicateGroup>& groups, ActionType action_type = ActionType::Rename);
+
+private:
+    /// Action history stack for undo support.
+    inline static std::vector<ActionHistoryEntry> history_;
+    static void undo_one_action(const ActionHistoryEntry& entry);
+    static void redo_one_action(const ActionHistoryEntry& entry);
+    static void apply_actions(const std::vector<ActionItem>& items);
 };

@@ -1,18 +1,33 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <string>
 #include <vector>
 #include <filesystem>
 #include <array>
 #include <cstdint>
+#include <cwctype>
 
-// Windows FILETIME epoch offset (Jan 1, 1601 to Jan 1, 1970) in 100-nanosecond intervals.
+// FILETIME epoch offset in 100-ns intervals.
 constexpr long long EPOCH_OFFSET = 13477420800LL;
 
-/// Buffer size for file I/O and hash computation (in bytes).
 constexpr size_t HASH_BUFFER_SIZE = 65536;
 
 using Sha256 = std::array<uint8_t, 32>;
 using XxHash32 = uint32_t;
+
+// Custom hash for Sha256 (std::array<uint8_t, 32>) — required by MSVC.
+struct Sha256Hash {
+    size_t operator()(const Sha256& h) const noexcept {
+        size_t result = 0;
+        for (const auto b : h) {
+            result ^= std::hash<uint8_t>{}(b) + 0x9e3779b9 + (result << 6) + (result >> 2);
+        }
+        return result;
+    }
+};
 
 struct HashResult {
     XxHash32 xxhash = 0;
@@ -27,7 +42,7 @@ struct FileInfo {
     Sha256 sha256{};
 };
 
-/// Alias for legacy compatibility with older code.
+// Legacy alias.
 using FileEntry = FileInfo;
 
 namespace PathUtils {
@@ -57,16 +72,16 @@ inline std::wstring to_long_path(const std::wstring& p) {
     return p;
 }
 
-inline std::string get_extension(const std::wstring& path) {
+inline std::wstring get_extension(const std::wstring& path) {
     std::filesystem::path fp(path);
-    auto ext = fp.extension().string();
-    if (!ext.empty() && ext[0] == '.') ext.erase(ext.begin());
-    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+    auto ext = fp.extension().wstring();
+    if (!ext.empty() && ext[0] == L'.') ext.erase(ext.begin());
+    for (auto& c : ext) c = static_cast<wchar_t>(std::towlower(c));
     return ext;
 }
 
 inline std::wstring get_name_without_ext(const std::wstring& path) {
-    return std::filesystem::path(path).stem().string();
+    return std::filesystem::path(path).stem().wstring();
 }
 
 inline std::wstring get_parent_dir(const std::wstring& path) {
@@ -75,6 +90,7 @@ inline std::wstring get_parent_dir(const std::wstring& path) {
     return p.wstring();
 }
 
+// Check whether the given path refers to a file.
 inline bool is_file(const std::wstring& path) {
     DWORD attrs = GetFileAttributesW(to_long_path(path).c_str());
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0);
@@ -98,7 +114,7 @@ inline long long get_file_mtime(const std::wstring& path) noexcept {
     return static_cast<long long>(ft.QuadPart / 10000000) - EPOCH_OFFSET;
 }
 
-/// Recursively walk `dir` and append all files found to `out`.
+// Recursively walk a directory and collect file entries.
 inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out) {
     if (dir.empty()) return;
 

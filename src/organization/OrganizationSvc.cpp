@@ -78,12 +78,24 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
     }
 }
 
+void OrganizationSvc::undo_one_action(const ActionHistoryEntry& entry) {
+    switch (entry.action_type) {
+        case ActionType::Rename:
+        case ActionType::MoveToDuplicatesFolder:
+            // Undo: restore from new_value back to old_value
+            MoveFileExW(PathUtils::utf8_to_wide(entry.new_value).c_str(),
+                        PathUtils::utf8_to_wide(entry.old_value).c_str(), MOVEFILE_REPLACE_EXISTING);
+            break;
+    }
+}
+
 void OrganizationSvc::redo_one_action(const ActionHistoryEntry& entry) {
     switch (entry.action_type) {
         case ActionType::Rename:
         case ActionType::MoveToDuplicatesFolder:
-            MoveFileExW(PathUtils::utf8_to_wide(entry.new_value).c_str(),
-                        PathUtils::utf8_to_wide(entry.old_value).c_str(), MOVEFILE_REPLACE_EXISTING);
+            // Redo: apply from old_value to new_value again
+            MoveFileExW(PathUtils::utf8_to_wide(entry.old_value).c_str(),
+                        PathUtils::utf8_to_wide(entry.new_value).c_str(), MOVEFILE_REPLACE_EXISTING);
             break;
     }
 }
@@ -92,7 +104,7 @@ void OrganizationSvc::undo_actions(int count) {
     while (count > 0 && !history_.empty()) {
         ActionHistoryEntry entry = std::move(history_.back());
         history_.pop_back();
-        redo_one_action(entry);
+        undo_one_action(entry);
         --count;
     }
 }

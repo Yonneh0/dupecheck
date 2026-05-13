@@ -1,6 +1,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <windows.h>
 #include <imgui.h>
 #include "SettingsDialog.h"
 #include "../utils/JsonConfig.h"
@@ -15,6 +16,7 @@ inline int get_max_processors() {
 void render_settings_dialog() {
     if (!ImGui::Button("Settings")) return;
     if (!ImGui::IsPopupOpen("##settings")) ImGui::OpenPopup("##settings");
+
     const ImVec2 popup_size(400, 520);
     ImGui::SetNextWindowSize(popup_size, ImGuiCond_Appearing);
 
@@ -25,20 +27,20 @@ void render_settings_dialog() {
     int max_procs  = get_max_processors();
     int hasher_count = max_procs;
 
-    // Load persisted settings from disk.
+    // Capture before loading persisted settings.
+    const int orig_threshold = threshold;
+    const uint32_t orig_tolerance = cfg.hash_tolerance;
+
     std::wstring db_path   = get_default_db_path();
     auto dir_pos           = db_path.find_last_of(L'\\');
     std::wstring config_file = (dir_pos != std::wstring::npos) ? db_path.substr(0, dir_pos) : db_path;
     config_file += L"\\settings.json";
 
-    const auto loaded  = JsonConfig::load(config_file);
+    const auto loaded = JsonConfig::load(config_file);
 
-    if (const auto it = loaded.find("name_similarity_threshold")) threshold = std::stoi(it->second);
-    if (const auto it = loaded.find("hash_tolerance")) tolerance = std::stoi(it->second);
-    if (const auto it = loaded.find("max_concurrent_hashers")) hasher_count = std::stoi(it->second);
-
-    const int orig_threshold = threshold;
-    const uint32_t orig_tolerance = cfg.hash_tolerance;
+    if (auto it = loaded.find("name_similarity_threshold"); it != loaded.end()) threshold = std::stoi(it->second);
+    if (auto it = loaded.find("hash_tolerance"); it != loaded.end()) tolerance = std::stoi(it->second);
+    if (auto it = loaded.find("max_concurrent_hashers"); it != loaded.end()) hasher_count = std::stoi(it->second);
 
     if (ImGui::BeginPopupModal("##settings", nullptr, 0)) {
         ImGui::Text("Settings");
@@ -76,9 +78,11 @@ void render_settings_dialog() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) {
+            threshold  = orig_threshold;
+            tolerance  = static_cast<int>(orig_tolerance);
+            hasher_count = max_procs;
             cfg.name_similarity_threshold = orig_threshold;
-            cfg.hash_tolerance            = orig_tolerance;
-            hasher_count                  = max_procs;  // revert to default
+            cfg.hash_tolerance              = orig_tolerance;
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

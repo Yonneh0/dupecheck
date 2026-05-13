@@ -1,5 +1,9 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <imgui.h>
 #include <windows.h>
+#include <shlobj.h>
 #include "Controls.h"
 #include "ImGuiView.h"
 #include "PreviewPanel.h"
@@ -11,11 +15,22 @@ static void browse_for_folder(std::wstring& path) {
     CoInitialize(nullptr);
     BROWSEINFOW bi{};
     bi.lpszTitle = L"Select a folder to scan";
-    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
     if (pidl != nullptr) {
         wchar_t buffer[MAX_PATH];
-        DWORD len = GetLongPathNameW(pidl, buffer, ARRAYSIZE(buffer));
-        if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(buffer))) path.assign(buffer, len);
+        if (SHGetPathFromIDListW(pidl, buffer)) {
+            DWORD len = GetLongPathNameW(buffer, nullptr, 0);
+            if (len > 0) {
+                std::wstring long_buf(len, L'\0');
+                if (GetLongPathNameW(buffer, &long_buf[0], len)) {
+                    path = std::move(long_buf);
+                } else {
+                    path.assign(buffer);
+                }
+            } else {
+                path.assign(buffer);
+            }
+        }
         CoTaskMemFree(pidl);
     }
     CoUninitialize();
@@ -23,19 +38,19 @@ static void browse_for_folder(std::wstring& path) {
 
 static bool validate_path(const std::wstring& path) {
     if (path.empty()) {
-        MessageBoxW(nullptr, L"Please enter or browse for a folder path.", "Scan Path", MB_ICONWARNING);
+        MessageBoxW(nullptr, L"Please enter or browse for a folder path.", L"Scan Path", MB_ICONWARNING);
         return false;
     }
 
     DWORD attrs = GetFileAttributesW(PathUtils::to_long_path(path).c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
         std::wstring msg = L"The path \"" + path + L"\" does not exist or is invalid.";
-        MessageBoxW(nullptr, msg.c_str(), "Invalid Path", MB_ICONERROR);
+        MessageBoxW(nullptr, msg.c_str(), L"Invalid Path", MB_ICONERROR);
         return false;
     }
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         std::wstring msg = L"\"" + path + L"\" is a file, not a folder. Please select a directory.";
-        MessageBoxW(nullptr, msg.c_str(), "Not a Folder", MB_ICONWARNING);
+        MessageBoxW(nullptr, msg.c_str(), L"Not a Folder", MB_ICONWARNING);
         return false;
     }
     return true;

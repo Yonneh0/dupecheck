@@ -22,13 +22,13 @@ struct ActionHistoryEntry {
     ActionType action_type = ActionType::Rename;
     std::string old_value;
     std::string new_value;
-    std::wstring backup_path;
 };
 
+// CLI command mode for parse_args / main.
 enum class CliCommand { None, InstallService, UninstallService, RunService };
 
 struct ServiceArgs {
-    std::string scan_path;
+    std::wstring scan_path;
     bool installed = false;
     CliCommand command = CliCommand::None;
 };
