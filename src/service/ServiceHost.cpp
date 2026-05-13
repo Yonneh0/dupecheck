@@ -6,7 +6,6 @@
 #include "../engine/DuplicateEngine.h"
 #include "../database/DatabaseManager.h"
 #include "../gui/SettingsDialog.h"
-#include "../gui/ImGuiView.h"
 
 static SERVICE_STATUS make_status(DWORD state, DWORD controls = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN) {
     SERVICE_STATUS ss{};
@@ -51,7 +50,7 @@ void ServiceHost::run_service(const std::wstring& scan_path, int interval_second
 
         if (scanner.init()) {
             auto files = scanner.scan(current_scan_path_.c_str());
-            DuplicateEngine engine{get_strategy_config_impl()};
+            DuplicateEngine engine{get_strategy_config()};
             auto groups = engine.find_duplicates(files, ALL_STRATEGIES);
 
             int64_t path_hash = 0;

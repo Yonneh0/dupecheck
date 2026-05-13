@@ -46,7 +46,8 @@ void render_controls(std::wstring& scan_path) {
     if (!scan_path.empty()) wcscpy_s(path_buf, scan_path.c_str());
     else path_buf[0] = L'\0';
 
-    const bool path_changed = ImGui::InputText("##path", reinterpret_cast<char*>(path_buf), static_cast<int>(sizeof(path_buf) / sizeof(wchar_t)));
+    const bool path_changed = ImGui::InputText("##path", reinterpret_cast<char*>(path_buf),
+                                                static_cast<int>(sizeof(path_buf) / sizeof(wchar_t)) - 1);
     if (path_changed && wcslen(path_buf)) {
         scan_path.assign(path_buf);
     }
@@ -68,16 +69,14 @@ void render_controls(std::wstring& scan_path) {
         if (attrs == INVALID_FILE_ATTRIBUTES) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
             ImGui::Text("Path does not exist");
-            ImGui::PopStyleColor();
         } else if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.3f, 1.0f));
             ImGui::Text("Not a folder");
-            ImGui::PopStyleColor();
         } else {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 1.0f, 0.6f, 1.0f));
             ImGui::Text("Path OK");
-            ImGui::PopStyleColor();
         }
+        ImGui::PopStyleColor();
     }
 
     render_preview_panel(ImGuiView::get_results());

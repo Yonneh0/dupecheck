@@ -8,32 +8,13 @@
 #include "Controls.h"
 #include <GL/gl.h>
 
-static std::wstring get_default_db_path() {
-    wchar_t appdata[MAX_PATH];
-    DWORD len = ExpandEnvironmentStringsW(L"%APPDATA%", appdata, ARRAYSIZE(appdata));
-    std::wstring db_path;
-    if (len > 0 && len < static_cast<DWORD>(ARRAYSIZE(appdata))) {
-        db_path = std::wstring(appdata) + L"\\DupeCheck\\dupecheck.db";
-    } else {
-        const wchar_t* env = _wgetenv(L"APPDATA");
-        db_path = (env ? std::wstring(env) : L"C:\\Windows") + L"\\DupeCheck\\dupecheck.db";
-    }
-
-    auto dir_pos = db_path.find_last_of(L'\\');
-    if (dir_pos != std::wstring::npos) {
-        CreateDirectoryW(db_path.substr(0, dir_pos).c_str(), nullptr);
-    }
-
-    return db_path;
-}
-
 static void perform_scan_impl(const wchar_t* path, DatabaseManager* db) {
     if (!path || !*path) return;
 
     CachedScannerService scanner;
     if (scanner.init()) {
         auto cached_files = scanner.scan(path);
-        DuplicateEngine engine(ImGuiView::config_);
+        DuplicateEngine engine(ImGuiView::s_config);
         std::vector<DuplicateGroup> result_groups = engine.find_duplicates(cached_files, ALL_STRATEGIES);
         ImGuiView::set_results(result_groups);
 
@@ -44,7 +25,7 @@ static void perform_scan_impl(const wchar_t* path, DatabaseManager* db) {
         std::string scan_path_str = PathUtils::wide_to_utf8(path);
         if (db) {
             db->save_session(path_hash, scan_path_str, static_cast<int>(cached_files.size()),
-                              static_cast<int>(result_groups.size()), ALL_STRATEGIES);
+                             static_cast<int>(result_groups.size()), ALL_STRATEGIES);
         }
     }
 }
@@ -78,7 +59,7 @@ int run_gui([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] int nCmdShow,
 
     if (!hwnd) return 1;
 
-    DatabaseManager db(get_default_db_path());
+    DatabaseManager db(g_db_path);
     if (!db.init()) {
         MessageBoxW(nullptr, L"Failed to initialize database.", L"Error", MB_ICONERROR);
         return 1;

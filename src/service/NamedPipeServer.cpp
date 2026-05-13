@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <string>
 #include <thread>
+#include <mutex>
 #include <memory>
 
 class NamedPipeServer::PipeImpl {
@@ -11,12 +12,16 @@ public:
 
     void start() { running_ = true; server_thread_ = std::thread([this]() { run_loop(); }); }
     ~PipeImpl() {
-        running_ = false;
-        if (pipe_handle_ != INVALID_HANDLE_VALUE) {
-            DisconnectNamedPipe(pipe_handle_);
-            CloseHandle(pipe_handle_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            running_ = false;
+            if (pipe_handle_ != INVALID_HANDLE_VALUE) {
+                DisconnectNamedPipe(pipe_handle_);
+                CloseHandle(pipe_handle_);
+                pipe_handle_ = INVALID_HANDLE_VALUE;
+            }
         }
-        if (server_thread_.joinable()) server_thread_.join();
+        server_thread_.join();
     }
 
 private:
@@ -24,6 +29,7 @@ private:
     DatabaseManager* db_ = nullptr;
     bool running_ = false;
     HANDLE pipe_handle_ = INVALID_HANDLE_VALUE;
+    std::mutex mutex_;
     std::thread server_thread_;
 
     void run_loop() {
@@ -31,6 +37,7 @@ private:
             pipe_handle_ = CreateNamedPipeW(pipe_name_.c_str(), PIPE_ACCESS_DUPLEX,
                                             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
                                             10, 4096, 4096, 1000, nullptr);
+
             if (pipe_handle_ == INVALID_HANDLE_VALUE) { Sleep(1000); continue; }
 
             ConnectNamedPipe(pipe_handle_, nullptr);
@@ -46,7 +53,7 @@ private:
                         std::string path_str = PathUtils::wide_to_utf8(f.path);
                         serialized += path_str + "\n";
                     }
-                    DWORD bytes_written;
+                    DWORD bytes_written = 0;
                     WriteFile(pipe_handle_, serialized.c_str(), static_cast<DWORD>(serialized.size()), &bytes_written, nullptr);
                 }
                 if (command == "SCAN") break;

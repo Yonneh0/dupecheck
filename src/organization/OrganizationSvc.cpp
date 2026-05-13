@@ -1,6 +1,7 @@
 #include "OrganizationSvc.h"
-#include "../engine/DuplicateEngine.h"
+#include <algorithm>
 
+/// Generate a renamed path with numeric suffix (e.g., "file (1).ext").
 std::wstring OrganizationSvc::generate_renamed_path(const FileInfo& file, int index) {
     std::wstring result = PathUtils::get_parent_dir(file.path);
     if (!result.empty() && result.back() != L'\\') result += L"\\";
@@ -77,20 +78,27 @@ void OrganizationSvc::apply_actions(const std::vector<ActionItem>& items) {
     }
 }
 
-void OrganizationSvc::undo_actions() {
-    if (history_.empty()) return;
-
-    ActionHistoryEntry entry = std::move(history_.back());
-    history_.pop_back();
-
+void OrganizationSvc::redo_one_action(const ActionHistoryEntry& entry) {
     switch (entry.action_type) {
         case ActionType::Rename:
         case ActionType::MoveToDuplicatesFolder:
-            // Undo: move from new location back to original location
             MoveFileExW(PathUtils::utf8_to_wide(entry.new_value).c_str(),
                         PathUtils::utf8_to_wide(entry.old_value).c_str(), MOVEFILE_REPLACE_EXISTING);
             break;
     }
+}
+
+void OrganizationSvc::undo_actions(int count) {
+    while (count > 0 && !history_.empty()) {
+        ActionHistoryEntry entry = std::move(history_.back());
+        history_.pop_back();
+        redo_one_action(entry);
+        --count;
+    }
+}
+
+void OrganizationSvc::clear_history() {
+    history_.clear();
 }
 
 std::vector<ActionItem> OrganizationSvc::generate_actions(const std::vector<DuplicateGroup>& groups, ActionType action_type) {

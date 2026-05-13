@@ -14,18 +14,22 @@ public:
     /// Apply a list of actions and record history for undo.
     static void apply(std::vector<ActionItem>& items);
 
-    /// Undo the most recent action from history.
-    static void undo_actions();
+    /// Undo one action, or all if count <= 0.
+    static void undo_actions(int count = 1);
 
-    // Exposed for UI access (Undo All button).
-    inline static std::vector<ActionHistoryEntry> history_;
+    /// Clear the entire action history.
+    static void clear_history();
+
+    /// Get a reference to the action history (for UI access).
+    inline static std::vector<ActionHistoryEntry>& get_history() { return history_; }
+
+private:
+    static void redo_one_action(const ActionHistoryEntry& entry);
+    static void apply_actions(const std::vector<ActionItem>& items);
 
     /// Generate action items for a single duplicate group.
     static std::vector<ActionItem> generate_actions(const DuplicateGroup& group, ActionType action_type = ActionType::Rename);
 
     /// Generate action items for multiple duplicate groups.
     static std::vector<ActionItem> generate_actions(const std::vector<DuplicateGroup>& groups, ActionType action_type = ActionType::Rename);
-
-private:
-    static void apply_actions(const std::vector<ActionItem>& items);
 };

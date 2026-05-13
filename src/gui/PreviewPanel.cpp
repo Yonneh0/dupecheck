@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <imgui.h>
 #include "PreviewPanel.h"
 #include "ImGuiView.h"
@@ -7,9 +10,6 @@
 void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
     if (groups.empty()) {
         ImGui::TextDisabled("No duplicates found — try scanning a different folder.");
-        if (!OrganizationSvc::history_.empty() && ImGui::Button("Undo All Actions")) {
-            while (!OrganizationSvc::history_.empty()) OrganizationSvc::undo_actions();
-        }
         return;
     }
 
@@ -56,17 +56,16 @@ void render_preview_panel(const std::vector<DuplicateGroup>& groups) {
                 OrganizationSvc::apply(items);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Undo Last")) {
-                OrganizationSvc::undo_actions();
+            if (ImGui::Button("Undo")) {
+                OrganizationSvc::undo_actions(1);
             }
 
             ImGui::TreePop();
         }
     }
 
-    if (!OrganizationSvc::history_.empty()) {
-        if (ImGui::Button("Undo All Actions")) {
-            while (!OrganizationSvc::history_.empty()) OrganizationSvc::undo_actions();
-        }
+    auto& history = OrganizationSvc::get_history();
+    if (!history.empty() && ImGui::Button("Undo All Actions")) {
+        OrganizationSvc::undo_actions(static_cast<int>(history.size()));
     }
 }

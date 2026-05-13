@@ -2,10 +2,12 @@
 #include <windows.h>
 #include <string>
 #include <vector>
-#include "../engine/DuplicateEngine.h"
+#include "../core/Strategy.h"
 #include "../database/DatabaseManager.h"
+#include "DuplicateEngine.h"
 
-extern std::wstring g_db_path;
+// Database path used by GUI components (set at startup).
+inline std::wstring g_db_path = get_default_db_path();
 
 class ImGuiView {
 public:
@@ -16,8 +18,8 @@ public:
 
 private:
     inline static const wchar_t* WND_CLASS_NAME = L"DupeCheck";
-    inline static DatabaseManager* s_db_ = nullptr;
-    inline static StrategyConfig config_{3, 1024};
+    inline static DatabaseManager* s_db_   = nullptr;
+    inline static StrategyConfig s_config{};
     inline static std::vector<DuplicateGroup> results_;
 };
 

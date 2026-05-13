@@ -9,6 +9,16 @@ std::string JsonConfig::trim_ws(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
+/// Parse a raw JSON value string into its final value.
+std::string JsonConfig::parse_value(const std::string& raw) {
+    std::string val = trim_ws(raw);
+    while (!val.empty() && val.back() == ',') val.pop_back();
+    if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+        return val.substr(1, val.size() - 2);
+    }
+    return val;
+}
+
 std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring& path) {
     FILE* f = nullptr;
     if (_wfopen_s(&f, path.c_str(), L"r") != 0) return {};
@@ -26,6 +36,7 @@ std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring
         raw = trim_ws(raw);
         if (raw.empty() || raw[0] == '#' || raw[0] == '{' || raw[0] == '}') continue;
 
+        // Find the first colon that separates key from value.
         auto pos = raw.find(':');
         if (pos == std::string::npos) continue;
 
@@ -35,10 +46,7 @@ std::unordered_map<std::string, std::string> JsonConfig::load(const std::wstring
             if (end_q != std::string::npos) key = key.substr(1, end_q - 1);
         }
 
-        std::string val = trim_ws(raw.substr(pos + 1));
-        while (!val.empty() && val.back() == ',') val.pop_back();
-
-        config[key] = val;
+        config[key] = parse_value(raw.substr(pos + 1));
     }
 
     fclose(f);

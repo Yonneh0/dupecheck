@@ -71,7 +71,7 @@ bool DatabaseManager::upsert_file(const FileInfo& info, long long last_scan_seco
 
 std::vector<FileInfo> DatabaseManager::get_cached_files() const {
     std::vector<FileInfo> results;
-    const char* sql = "SELECT path, size, mtime, xxhash32, sha256 FROM files ORDER BY size DESC";
+    const char* sql = "SELECT path, size, mtime, xxhash32, sha256 FROM files ORDER BY path COLLATE NOCASE";
     sqlite3_stmt* stmt; int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) return results;
 
@@ -92,9 +92,8 @@ std::vector<FileInfo> DatabaseManager::get_cached_files() const {
 }
 
 bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& current_paths) {
-    if (current_paths.empty()) {
-        return sqlite3_exec(db_, "DELETE FROM files", nullptr, nullptr, nullptr) == SQLITE_OK;
-    }
+    // If no paths provided, keep all existing records rather than deleting everything.
+    if (current_paths.empty()) return true;
     std::string placeholders;
     placeholders.reserve(current_paths.size() * 2);
     for (size_t i = 0; i < current_paths.size(); ++i) {
@@ -116,15 +115,19 @@ bool DatabaseManager::remove_deleted_files(const std::vector<std::wstring>& curr
     return ok;
 }
 
-bool DatabaseManager::save_session(int64_t path_hash, int file_count, int duplicate_count, uint32_t strategy_flags) {
-    const char* sql = "INSERT INTO scan_sessions (path_hash, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, strftime('%s', 'now'), ?, ?, ?)";
+bool DatabaseManager::save_session(int64_t path_hash, const std::string& scan_path, int file_count, int duplicate_count, uint32_t strategy_flags) {
+    const char* sql = "INSERT INTO scan_sessions (path_hash, scan_path, created_at, file_count, duplicate_count, strategy_flags) VALUES (?, ?, strftime('%s', 'now'), ?, ?, ?)";
+
+    // Path hash is used to identify which directory was scanned. A value of 0 means
+    // the session record doesn't have a meaningful path association yet (e.g. during service startup).
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
 
     sqlite3_bind_int64(stmt, 1, path_hash);
-    sqlite3_bind_int64(stmt, 2, file_count);
-    sqlite3_bind_int64(stmt, 3, duplicate_count);
-    sqlite3_bind_int64(stmt, 4, strategy_flags);
+    sqlite3_bind_text(stmt, 2, scan_path.c_str(), static_cast<int>(scan_path.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, file_count);
+    sqlite3_bind_int64(stmt, 4, duplicate_count);
+    sqlite3_bind_int64(stmt, 5, strategy_flags);
 
     int changes = (sqlite3_step(stmt) == SQLITE_DONE) ? sqlite3_changes(db_) : 0;
     sqlite3_finalize(stmt);

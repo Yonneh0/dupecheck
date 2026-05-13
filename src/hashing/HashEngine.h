@@ -4,7 +4,6 @@
 #include <vector>
 #include "../core/FileInfo.h"
 
-extern HMODULE g_bcrypt_handle;
 extern BCRYPT_ALG_HANDLE g_bcrypt_alg_;
 extern std::once_flag s_init_flag;
 
@@ -14,7 +13,6 @@ public:
     static void cleanup();
     static BCRYPT_ALG_HANDLE get_alg_handle() { return g_bcrypt_alg_; }
     static HashResult compute(const wchar_t* path);
-    static void compute_batch(const std::vector<std::wstring>& paths, std::vector<HashResult>& out);
 
 private:
     inline static bool s_initialized_ = false;

@@ -5,7 +5,10 @@
 #include <array>
 #include <cstdint>
 
+// Windows FILETIME epoch offset (Jan 1, 1601 to Jan 1, 1970) in 100-nanosecond intervals.
 constexpr long long EPOCH_OFFSET = 13477420800LL;
+
+/// Buffer size for file I/O and hash computation (in bytes).
 constexpr size_t HASH_BUFFER_SIZE = 65536;
 
 using Sha256 = std::array<uint8_t, 32>;
@@ -24,6 +27,7 @@ struct FileInfo {
     Sha256 sha256{};
 };
 
+/// Alias for legacy compatibility with older code.
 using FileEntry = FileInfo;
 
 namespace PathUtils {
@@ -76,23 +80,25 @@ inline bool is_file(const std::wstring& path) {
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0);
 }
 
-inline uint64_t get_file_size(const std::wstring& path) {
-    WIN32_FILE_ATTRIBUTE_DATA info;
+inline uint64_t get_file_size(const std::wstring& path) noexcept {
+    WIN32_FILE_ATTRIBUTE_DATA info{};
     if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info)) return 0;
-    ULARGE_INTEGER size;
-    size.QuadPart = static_cast<uint64_t>(info.nFileSizeHigh) << 32 | info.nFileSizeLow;
+    ULARGE_INTEGER size{};
+    size.LowPart = info.nFileSizeLow;
+    size.HighPart = info.nFileSizeHigh;
     return size.QuadPart;
 }
 
-inline long long get_file_mtime(const std::wstring& path) {
-    WIN32_FILE_ATTRIBUTE_DATA info;
+inline long long get_file_mtime(const std::wstring& path) noexcept {
+    WIN32_FILE_ATTRIBUTE_DATA info{};
     if (!GetFileAttributesExW(to_long_path(path).c_str(), GetFileExInfoStandard, &info)) return 0;
-    ULARGE_INTEGER ft;
-    ft.LowPart = info.ftLastWriteTime.dwLowDateTime;
-    ft.HighPart = info.ftLastWriteTime.dwHighDateTime;
+    ULARGE_INTEGER ft{};
+    ft.LowPart   = info.ftLastWriteTime.dwLowDateTime;
+    ft.HighPart  = info.ftLastWriteTime.dwHighDateTime;
     return static_cast<long long>(ft.QuadPart / 10000000) - EPOCH_OFFSET;
 }
 
+/// Recursively walk `dir` and append all files found to `out`.
 inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out) {
     if (dir.empty()) return;
 
@@ -126,10 +132,6 @@ inline void enumerate_files(const std::wstring& dir, std::vector<FileInfo>& out)
     } while (FindNextFileW(hFind, &find_data));
 
     FindClose(hFind);
-}
-
-inline std::wstring get_duplicates_subfolder(const std::wstring& dir) {
-    return dir + L"\\duplicates";
 }
 
 } // namespace PathUtils

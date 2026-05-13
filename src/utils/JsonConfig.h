@@ -13,4 +13,5 @@ public:
 
 private:
     static std::string trim_ws(const std::string& s);
+    static std::string parse_value(const std::string& raw);
 };

@@ -1,28 +1,23 @@
 #pragma once
 #include <vector>
-#include <unordered_set>
 #include "../core/FileInfo.h"
 #include "../core/Strategy.h"
-#include "../core/ActionModel.h"
+#include "DuplicateGroup.h"
 #include "ExactMatch.h"
 #include "NameVariant.h"
 #include "SizeHashSimilar.h"
 #include "ExtensionFamily.h"
 #include "FolderCopy.h"
 
-struct DuplicateGroup {
-    std::vector<FileInfo> files;
-    Strategy strategy = Strategy::ExactMatch;
-    std::string label;
-};
-
+/// Merge results from multiple strategies, removing files that appear in lower-priority groups.
 std::vector<DuplicateGroup> deduplicate_groups(std::vector<DuplicateGroup>&& groups);
 
+/// Run all enabled detection strategies against the given file list and return deduplicated results.
 class DuplicateEngine {
 public:
-    explicit DuplicateEngine(StrategyConfig config);
+    explicit DuplicateEngine(StrategyConfig config = {});
     std::vector<DuplicateGroup> find_duplicates(const std::vector<FileInfo>& files, uint32_t strategies);
-    void set_directories(const std::vector<std::wstring>& dirs) { dirs_ = dirs; }
+    void set_directories(const std::vector<std::wstring>& dirs) noexcept { dirs_ = dirs; }
 
 private:
     StrategyConfig config_;

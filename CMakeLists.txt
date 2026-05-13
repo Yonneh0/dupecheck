@@ -38,12 +38,8 @@ target_include_directories(imgui PUBLIC ${CMAKE_SOURCE_DIR}/external/imgui
 
 set(CORE_SOURCES
     src/database/DatabaseManager.cpp
+    src/hashing/HashEngine.cpp
     src/engine/DuplicateEngine.cpp
-    src/engine/ExactMatch.cpp
-    src/engine/FolderCopy.cpp
-    src/engine/NameVariant.cpp
-    src/engine/SizeHashSimilar.cpp
-    src/engine/ExtensionFamily.cpp
     src/scanner/CachedScannerService.cpp
     src/service/ServiceHost.cpp
     src/organization/OrganizationSvc.cpp
@@ -56,9 +52,9 @@ target_link_libraries(dupecheck_core PUBLIC sqlite3 imgui xxhash bcrypt shlwapi 
 target_include_directories(dupecheck_core PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_executable(dupecheck src/main.cpp
-                               src/gui/Controls.cpp
-                               src/gui/ImGuiView.cpp
-                               src/gui/PreviewPanel.cpp
-                               src/gui/SettingsDialog.cpp)
+                        src/gui/Controls.cpp
+                        src/gui/ImGuiView.cpp
+                        src/gui/PreviewPanel.cpp
+                        src/gui/SettingsDialog.cpp)
 target_link_libraries(dupecheck PRIVATE dupecheck_core opengl32.lib)
 set_target_properties(dupecheck PROPERTIES OUTPUT_NAME "DupeCheck")
